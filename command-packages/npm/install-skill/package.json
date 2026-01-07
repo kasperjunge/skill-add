@@ -1,7 +1,14 @@
 {
   "name": "install-skill",
   "version": "0.0.1",
-  "description": "CLI tool for installing Claude Code skills from GitHub. Coming soon.",
+  "type": "module",
+  "description": "Install Claude Code skills from GitHub",
+  "bin": {
+    "install-skill": "./bin/install-skill.js"
+  },
+  "files": [
+    "bin"
+  ],
   "keywords": [
     "claude",
     "claude-code",
@@ -14,5 +21,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kasperjunge/agent-resources.git"
+  },
+  "dependencies": {
+    "agent-resources": "^0.0.1"
   }
 }

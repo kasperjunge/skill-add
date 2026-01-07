@@ -1,7 +1,14 @@
 {
   "name": "create-agent-resources-repo",
   "version": "0.0.1",
-  "description": "Scaffold a new agent-resources GitHub repository for sharing Claude Code skills, commands, and agents. Coming soon.",
+  "type": "module",
+  "description": "Scaffold a new agent-resources GitHub repository for sharing Claude Code skills, commands, and agents",
+  "bin": {
+    "create-agent-resources-repo": "./bin/create-agent-resources-repo.js"
+  },
+  "files": [
+    "bin"
+  ],
   "keywords": [
     "claude",
     "claude-code",
@@ -15,5 +22,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kasperjunge/agent-resources.git"
+  },
+  "dependencies": {
+    "agent-resources": "^0.0.1"
   }
 }

@@ -1,12 +1,28 @@
 {
   "name": "install-command",
   "version": "0.0.1",
-  "description": "CLI tool for installing Claude Code commands from GitHub. Coming soon.",
-  "keywords": ["claude", "claude-code", "ai", "agent", "command"],
+  "type": "module",
+  "description": "Install Claude Code commands from GitHub",
+  "bin": {
+    "install-command": "./bin/install-command.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai",
+    "agent",
+    "command"
+  ],
   "author": "Kasper Junge",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/kasperjunge/agent-resources"
+  },
+  "dependencies": {
+    "agent-resources": "^0.0.1"
   }
 }

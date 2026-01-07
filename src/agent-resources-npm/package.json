@@ -1,7 +1,30 @@
 {
   "name": "agent-resources",
   "version": "0.0.1",
-  "description": "CLI tools for installing Claude Code resources (skills, commands, agents) from GitHub. Coming soon.",
+  "type": "module",
+  "description": "CLI tools for installing Claude Code resources (skills, commands, agents) from GitHub.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./cli/skill": "./dist/cli/skill.js",
+    "./cli/command": "./dist/cli/command.js",
+    "./cli/agent": "./dist/cli/agent.js",
+    "./cli/create": "./dist/cli/create.js"
+  },
+  "bin": {
+    "add-skill": "./bin/add-skill.js",
+    "add-command": "./bin/add-command.js",
+    "add-agent": "./bin/add-agent.js",
+    "create-agent-resources-repo": "./bin/create-agent-resources-repo.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
   "keywords": [
     "claude",
     "claude-code",
@@ -15,5 +38,18 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kasperjunge/agent-resources.git"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "fs-extra": "^11.2.0",
+    "ora": "^8.0.0",
+    "tar": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
   }
 }

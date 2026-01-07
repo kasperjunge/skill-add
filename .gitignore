@@ -45,3 +45,7 @@ htmlcov/
 
 .notes/
 .claude/
+
+# Node.js
+node_modules/
+package-lock.json
