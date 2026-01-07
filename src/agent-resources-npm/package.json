@@ -1,6 +1,6 @@
 {
   "name": "agent-resources",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "CLI tools for installing Claude Code resources (skills, commands, agents) from GitHub.",
   "main": "./dist/index.js",

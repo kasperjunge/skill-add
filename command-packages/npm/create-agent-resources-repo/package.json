@@ -1,6 +1,6 @@
 {
   "name": "create-agent-resources-repo",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "Scaffold a new agent-resources GitHub repository for sharing Claude Code skills, commands, and agents",
   "bin": {
@@ -24,6 +24,6 @@
     "url": "git+https://github.com/kasperjunge/agent-resources.git"
   },
   "dependencies": {
-    "agent-resources": "^0.0.1"
+    "agent-resources": "^0.0.2"
   }
 }

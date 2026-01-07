@@ -1,6 +1,6 @@
 {
   "name": "install-agent",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "Install Claude Code agents from GitHub",
   "bin": {
@@ -22,6 +22,6 @@
     "url": "https://github.com/kasperjunge/agent-resources"
   },
   "dependencies": {
-    "agent-resources": "^0.0.1"
+    "agent-resources": "^0.0.2"
   }
 }
