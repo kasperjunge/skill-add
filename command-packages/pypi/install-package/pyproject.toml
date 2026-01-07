@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "install-package"
+version = "0.0.1"
+description = "Placeholder package"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Kasper Junge" }
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/install_package"]
