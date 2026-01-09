@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-resources"
-version = "0.3.0"
-description = "Add Claude Code skills, commands, and agents from GitHub to your project"
+version = "0.3.1"
+description = "Install Claude Code skills, commands, and agents from GitHub to your project"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

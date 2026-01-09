@@ -48,3 +48,4 @@ htmlcov/
 # Node.js
 node_modules/
 package-lock.json
+.env
