@@ -14,9 +14,10 @@ def check_gh_cli() -> bool:
             ["gh", "auth", "status"],
             capture_output=True,
             text=True,
+            timeout=30,
         )
         return result.returncode == 0
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
@@ -31,9 +32,10 @@ def get_github_username() -> str | None:
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
         return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 
@@ -49,7 +51,7 @@ def create_github_repo(path: Path, repo_name: str = "agent-resources") -> str | 
     """
     try:
         # Create repo on GitHub (public by default)
-        result = subprocess.run(
+        subprocess.run(
             [
                 "gh",
                 "repo",
@@ -63,15 +65,16 @@ def create_github_repo(path: Path, repo_name: str = "agent-resources") -> str | 
             capture_output=True,
             text=True,
             check=True,
+            timeout=120,
         )
 
-        # Extract URL from output or construct it
+        # Construct URL from username
         username = get_github_username()
         if username:
             return f"https://github.com/{username}/{repo_name}"
 
         return None
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 
@@ -85,7 +88,8 @@ def repo_exists(repo_name: str = "agent-resources") -> bool:
             ["gh", "repo", "view", repo_name],
             capture_output=True,
             text=True,
+            timeout=30,
         )
         return result.returncode == 0
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False

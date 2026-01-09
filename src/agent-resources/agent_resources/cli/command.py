@@ -4,14 +4,8 @@ from typing import Annotated
 
 import typer
 
-from agent_resources.cli.common import fetch_spinner, get_destination, parse_resource_ref, print_success_message
-from agent_resources.exceptions import (
-    ClaudeAddError,
-    RepoNotFoundError,
-    ResourceExistsError,
-    ResourceNotFoundError,
-)
-from agent_resources.fetcher import ResourceType, fetch_resource
+from agent_resources.cli.common import handle_add_resource
+from agent_resources.fetcher import ResourceType
 
 app = typer.Typer(
     add_completion=False,
@@ -55,32 +49,7 @@ def add(
         add-command kasperjunge/my-repo/commit
         add-command kasperjunge/review-pr --global
     """
-    try:
-        username, repo_name, command_name, path_segments = parse_resource_ref(command_ref)
-    except typer.BadParameter as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-
-    dest = get_destination("commands", global_install)
-
-    try:
-        with fetch_spinner():
-            command_path = fetch_resource(
-                username, repo_name, command_name, path_segments, dest, ResourceType.COMMAND, overwrite
-            )
-        print_success_message("command", command_name, username, repo_name)
-    except RepoNotFoundError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-    except ResourceNotFoundError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-    except ResourceExistsError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-    except ClaudeAddError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    handle_add_resource(command_ref, ResourceType.COMMAND, "commands", overwrite, global_install)
 
 
 if __name__ == "__main__":

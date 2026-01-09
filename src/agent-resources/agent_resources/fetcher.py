@@ -60,6 +60,42 @@ RESOURCE_CONFIGS: dict[ResourceType, ResourceConfig] = {
     ),
 }
 
+
+def _build_resource_path(base_dir: Path, config: ResourceConfig, path_segments: list[str]) -> Path:
+    """Build a resource path from base directory and segments."""
+    if config.is_directory:
+        return base_dir / Path(*path_segments)
+    *parent_segments, base_name = path_segments
+    if parent_segments:
+        return base_dir / Path(*parent_segments) / f"{base_name}{config.file_extension}"
+    return base_dir / f"{base_name}{config.file_extension}"
+
+
+def _download_and_extract_tarball(tarball_url: str, username: str, repo_name: str, tmp_path: Path) -> Path:
+    """Download and extract a GitHub tarball, returning the repo directory path."""
+    tarball_path = tmp_path / "repo.tar.gz"
+
+    try:
+        with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+            response = client.get(tarball_url)
+            if response.status_code == 404:
+                raise RepoNotFoundError(
+                    f"Repository '{username}/{repo_name}' not found on GitHub."
+                )
+            response.raise_for_status()
+            tarball_path.write_bytes(response.content)
+    except httpx.HTTPStatusError as e:
+        raise ClaudeAddError(f"Failed to download repository: {e}")
+    except httpx.RequestError as e:
+        raise ClaudeAddError(f"Network error: {e}")
+
+    extract_path = tmp_path / "extracted"
+    with tarfile.open(tarball_path, "r:gz") as tar:
+        tar.extractall(extract_path)
+
+    return extract_path / f"{repo_name}-main"
+
+
 def fetch_resource(
     username: str,
     repo_name: str,
@@ -90,18 +126,7 @@ def fetch_resource(
         ResourceExistsError: If resource exists locally and overwrite=False
     """
     config = RESOURCE_CONFIGS[resource_type]
-
-    # Determine destination path (mirrors source structure for nested paths)
-    if config.is_directory:
-        # Skills: dest/path/to/skill-name/
-        resource_dest = dest / Path(*path_segments)
-    else:
-        # Commands/Agents: dest/path/to/resource-name.md
-        *parent_segments, base_name = path_segments
-        if parent_segments:
-            resource_dest = dest / Path(*parent_segments) / f"{base_name}{config.file_extension}"
-        else:
-            resource_dest = dest / f"{base_name}{config.file_extension}"
+    resource_dest = _build_resource_path(dest, config, path_segments)
 
     # Check if resource already exists locally
     if resource_dest.exists() and not overwrite:
@@ -116,45 +141,9 @@ def fetch_resource(
     )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        tarball_path = tmp_path / "repo.tar.gz"
-
-        # Download
-        try:
-            with httpx.Client(follow_redirects=True, timeout=30.0) as client:
-                response = client.get(tarball_url)
-                if response.status_code == 404:
-                    raise RepoNotFoundError(
-                        f"Repository '{username}/{repo_name}' not found on GitHub."
-                    )
-                response.raise_for_status()
-
-                tarball_path.write_bytes(response.content)
-        except httpx.HTTPStatusError as e:
-            raise ClaudeAddError(f"Failed to download repository: {e}")
-        except httpx.RequestError as e:
-            raise ClaudeAddError(f"Network error: {e}")
-
-        # Extract
-        extract_path = tmp_path / "extracted"
-        with tarfile.open(tarball_path, "r:gz") as tar:
-            tar.extractall(extract_path)
-
-        # Find the resource in extracted content
-        # Tarball extracts to: <repo>-main/.claude/<type>/<path>/<name>[.md]
-        repo_dir = extract_path / f"{repo_name}-main"
-
-        # Build the nested source path from segments
-        if config.is_directory:
-            # Skills: .claude/skills/path/to/skill-name/
-            resource_source = repo_dir / config.source_subdir / Path(*path_segments)
-        else:
-            # Commands/Agents: .claude/commands/path/to/command-name.md
-            *parent_segments, base_name = path_segments
-            if parent_segments:
-                resource_source = repo_dir / config.source_subdir / Path(*parent_segments) / f"{base_name}{config.file_extension}"
-            else:
-                resource_source = repo_dir / config.source_subdir / f"{base_name}{config.file_extension}"
+        repo_dir = _download_and_extract_tarball(tarball_url, username, repo_name, Path(tmp_dir))
+        source_base = repo_dir / config.source_subdir
+        resource_source = _build_resource_path(source_base, config, path_segments)
 
         if not resource_source.exists():
             # Build display path for error message

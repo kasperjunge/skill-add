@@ -9,6 +9,14 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
+from agent_resources.exceptions import (
+    ClaudeAddError,
+    RepoNotFoundError,
+    ResourceExistsError,
+    ResourceNotFoundError,
+)
+from agent_resources.fetcher import ResourceType, fetch_resource
+
 console = Console()
 
 # Default repository name when not specified
@@ -137,3 +145,39 @@ def print_success_message(resource_type: str, name: str, username: str, repo: st
         f"📢 Share: uvx add-{resource_type} {share_ref}",
     ]
     console.print(random.choice(ctas), style="dim")
+
+
+def handle_add_resource(
+    resource_ref: str,
+    resource_type: ResourceType,
+    resource_subdir: str,
+    overwrite: bool = False,
+    global_install: bool = False,
+) -> None:
+    """
+    Generic handler for adding any resource type.
+
+    Args:
+        resource_ref: Resource reference (e.g., "username/resource-name")
+        resource_type: Type of resource (SKILL, COMMAND, or AGENT)
+        resource_subdir: Destination subdirectory (e.g., "skills", "commands", "agents")
+        overwrite: Whether to overwrite existing resource
+        global_install: If True, install to ~/.claude/, else to ./.claude/
+    """
+    try:
+        username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
+    except typer.BadParameter as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+    dest = get_destination(resource_subdir, global_install)
+
+    try:
+        with fetch_spinner():
+            fetch_resource(
+                username, repo_name, name, path_segments, dest, resource_type, overwrite
+            )
+        print_success_message(resource_type.value, name, username, repo_name)
+    except (RepoNotFoundError, ResourceNotFoundError, ResourceExistsError, ClaudeAddError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
