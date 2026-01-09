@@ -15,7 +15,42 @@ console = Console()
 DEFAULT_REPO_NAME = "agent-resources"
 
 
-def parse_resource_ref(ref: str) -> tuple[str, str, str]:
+def parse_nested_name(name: str) -> tuple[str, list[str]]:
+    """
+    Parse a resource name that may contain colon-delimited path segments.
+
+    Args:
+        name: Resource name, possibly with colons (e.g., "dir:hello-world")
+
+    Returns:
+        Tuple of (base_name, path_segments) where:
+        - base_name is the final segment (e.g., "hello-world")
+        - path_segments is the full list of segments (e.g., ["dir", "hello-world"])
+
+    Raises:
+        typer.BadParameter: If the name has invalid colon usage
+    """
+    if not name:
+        raise typer.BadParameter("Resource name cannot be empty")
+
+    if name.startswith(":") or name.endswith(":"):
+        raise typer.BadParameter(
+            f"Invalid resource name '{name}': cannot start or end with ':'"
+        )
+
+    segments = name.split(":")
+
+    # Check for empty segments (consecutive colons)
+    if any(not seg for seg in segments):
+        raise typer.BadParameter(
+            f"Invalid resource name '{name}': contains empty path segments"
+        )
+
+    base_name = segments[-1]
+    return base_name, segments
+
+
+def parse_resource_ref(ref: str) -> tuple[str, str, str, list[str]]:
     """
     Parse resource reference into components.
 
@@ -23,11 +58,16 @@ def parse_resource_ref(ref: str) -> tuple[str, str, str]:
     - '<username>/<name>' -> uses default 'agent-resources' repo
     - '<username>/<repo>/<name>' -> uses custom repo
 
+    The name component can contain colons for nested paths:
+    - 'dir:hello-world' -> path segments ['dir', 'hello-world']
+
     Args:
         ref: Resource reference
 
     Returns:
-        Tuple of (username, repo_name, resource_name)
+        Tuple of (username, repo_name, resource_name, path_segments)
+        - resource_name: the full name with colons (for display)
+        - path_segments: list of path components (for file operations)
 
     Raises:
         typer.BadParameter: If the format is invalid
@@ -49,7 +89,10 @@ def parse_resource_ref(ref: str) -> tuple[str, str, str]:
             f"Invalid format: '{ref}'. Expected: <username>/<name> or <username>/<repo>/<name>"
         )
 
-    return username, repo, name
+    # Parse nested path from name
+    _base_name, path_segments = parse_nested_name(name)
+
+    return username, repo, name, path_segments
 
 
 def get_destination(resource_subdir: str, global_install: bool) -> Path:

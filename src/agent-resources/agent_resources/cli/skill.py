@@ -56,7 +56,7 @@ def add(
         add-skill kasperjunge/analyze-paper --global
     """
     try:
-        username, repo_name, skill_name = parse_resource_ref(skill_ref)
+        username, repo_name, skill_name, path_segments = parse_resource_ref(skill_ref)
     except typer.BadParameter as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -66,7 +66,7 @@ def add(
     try:
         with fetch_spinner():
             skill_path = fetch_resource(
-                username, repo_name, skill_name, dest, ResourceType.SKILL, overwrite
+                username, repo_name, skill_name, path_segments, dest, ResourceType.SKILL, overwrite
             )
         print_success_message("skill", skill_name, username, repo_name)
     except RepoNotFoundError as e:

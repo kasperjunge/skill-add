@@ -56,7 +56,7 @@ def add(
         add-agent kasperjunge/test-writer --global
     """
     try:
-        username, repo_name, agent_name = parse_resource_ref(agent_ref)
+        username, repo_name, agent_name, path_segments = parse_resource_ref(agent_ref)
     except typer.BadParameter as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -66,7 +66,7 @@ def add(
     try:
         with fetch_spinner():
             agent_path = fetch_resource(
-                username, repo_name, agent_name, dest, ResourceType.AGENT, overwrite
+                username, repo_name, agent_name, path_segments, dest, ResourceType.AGENT, overwrite
             )
         print_success_message("agent", agent_name, username, repo_name)
     except RepoNotFoundError as e:

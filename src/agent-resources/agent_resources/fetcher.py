@@ -64,6 +64,7 @@ def fetch_resource(
     username: str,
     repo_name: str,
     name: str,
+    path_segments: list[str],
     dest: Path,
     resource_type: ResourceType,
     overwrite: bool = False,
@@ -74,7 +75,8 @@ def fetch_resource(
     Args:
         username: GitHub username
         repo_name: GitHub repository name
-        name: Name of the resource to fetch
+        name: Display name of the resource (may contain colons for nested paths)
+        path_segments: Path segments for the resource (e.g., ['dir', 'hello-world'])
         dest: Destination directory (e.g., .claude/skills/, .claude/commands/)
         resource_type: Type of resource (SKILL, COMMAND, or AGENT)
         overwrite: Whether to overwrite existing resource
@@ -89,11 +91,17 @@ def fetch_resource(
     """
     config = RESOURCE_CONFIGS[resource_type]
 
-    # Determine destination path
+    # Determine destination path (mirrors source structure for nested paths)
     if config.is_directory:
-        resource_dest = dest / name
+        # Skills: dest/path/to/skill-name/
+        resource_dest = dest / Path(*path_segments)
     else:
-        resource_dest = dest / f"{name}{config.file_extension}"
+        # Commands/Agents: dest/path/to/resource-name.md
+        *parent_segments, base_name = path_segments
+        if parent_segments:
+            resource_dest = dest / Path(*parent_segments) / f"{base_name}{config.file_extension}"
+        else:
+            resource_dest = dest / f"{base_name}{config.file_extension}"
 
     # Check if resource already exists locally
     if resource_dest.exists() and not overwrite:
@@ -133,19 +141,28 @@ def fetch_resource(
             tar.extractall(extract_path)
 
         # Find the resource in extracted content
-        # Tarball extracts to: <repo>-main/.claude/<type>/<name>[.md]
+        # Tarball extracts to: <repo>-main/.claude/<type>/<path>/<name>[.md]
         repo_dir = extract_path / f"{repo_name}-main"
 
+        # Build the nested source path from segments
         if config.is_directory:
-            resource_source = repo_dir / config.source_subdir / name
+            # Skills: .claude/skills/path/to/skill-name/
+            resource_source = repo_dir / config.source_subdir / Path(*path_segments)
         else:
-            resource_source = repo_dir / config.source_subdir / f"{name}{config.file_extension}"
+            # Commands/Agents: .claude/commands/path/to/command-name.md
+            *parent_segments, base_name = path_segments
+            if parent_segments:
+                resource_source = repo_dir / config.source_subdir / Path(*parent_segments) / f"{base_name}{config.file_extension}"
+            else:
+                resource_source = repo_dir / config.source_subdir / f"{base_name}{config.file_extension}"
 
         if not resource_source.exists():
+            # Build display path for error message
+            nested_path = "/".join(path_segments)
             if config.is_directory:
-                expected_location = f"{config.source_subdir}/{name}/"
+                expected_location = f"{config.source_subdir}/{nested_path}/"
             else:
-                expected_location = f"{config.source_subdir}/{name}{config.file_extension}"
+                expected_location = f"{config.source_subdir}/{nested_path}{config.file_extension}"
             raise ResourceNotFoundError(
                 f"{resource_type.value.capitalize()} '{name}' not found in {username}/{repo_name}.\n"
                 f"Expected location: {expected_location}"
@@ -158,8 +175,8 @@ def fetch_resource(
             else:
                 resource_dest.unlink()
 
-        # Ensure destination parent exists
-        dest.mkdir(parents=True, exist_ok=True)
+        # Ensure destination parent exists (including nested directories)
+        resource_dest.parent.mkdir(parents=True, exist_ok=True)
 
         # Copy resource to destination
         if config.is_directory:

@@ -56,7 +56,7 @@ def add(
         add-command kasperjunge/review-pr --global
     """
     try:
-        username, repo_name, command_name = parse_resource_ref(command_ref)
+        username, repo_name, command_name, path_segments = parse_resource_ref(command_ref)
     except typer.BadParameter as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -66,7 +66,7 @@ def add(
     try:
         with fetch_spinner():
             command_path = fetch_resource(
-                username, repo_name, command_name, dest, ResourceType.COMMAND, overwrite
+                username, repo_name, command_name, path_segments, dest, ResourceType.COMMAND, overwrite
             )
         print_success_message("command", command_name, username, repo_name)
     except RepoNotFoundError as e:
