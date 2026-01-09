@@ -24,8 +24,8 @@ def add(
     skill_ref: Annotated[
         str,
         typer.Argument(
-            help="Skill to add in format: <username>/<skill-name>",
-            metavar="USERNAME/SKILL-NAME",
+            help="Skill to add: <username>/<skill-name> or <username>/<repo>/<skill-name>",
+            metavar="USERNAME/[REPO/]SKILL-NAME",
         ),
     ],
     overwrite: Annotated[
@@ -45,30 +45,30 @@ def add(
     ] = False,
 ) -> None:
     """
-    Add a skill from a GitHub user's agent-resources repository.
+    Add a skill from a GitHub repository.
 
     The skill will be copied to .claude/skills/<skill-name>/ in the current
     directory (or ~/.claude/skills/ with --global).
 
     Example:
         add-skill kasperjunge/analyze-paper
+        add-skill kasperjunge/my-repo/analyze-paper
         add-skill kasperjunge/analyze-paper --global
     """
     try:
-        username, skill_name = parse_resource_ref(skill_ref)
+        username, repo_name, skill_name = parse_resource_ref(skill_ref)
     except typer.BadParameter as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
     dest = get_destination("skills", global_install)
-    scope = "user" if global_install else "project"
 
     try:
         with fetch_spinner():
             skill_path = fetch_resource(
-                username, skill_name, dest, ResourceType.SKILL, overwrite
+                username, repo_name, skill_name, dest, ResourceType.SKILL, overwrite
             )
-        print_success_message("skill", skill_name, username)
+        print_success_message("skill", skill_name, username, repo_name)
     except RepoNotFoundError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

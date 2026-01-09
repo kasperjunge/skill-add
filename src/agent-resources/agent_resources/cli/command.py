@@ -24,8 +24,8 @@ def add(
     command_ref: Annotated[
         str,
         typer.Argument(
-            help="Command to add in format: <username>/<command-name>",
-            metavar="USERNAME/COMMAND-NAME",
+            help="Command to add: <username>/<command-name> or <username>/<repo>/<command-name>",
+            metavar="USERNAME/[REPO/]COMMAND-NAME",
         ),
     ],
     overwrite: Annotated[
@@ -45,30 +45,30 @@ def add(
     ] = False,
 ) -> None:
     """
-    Add a slash command from a GitHub user's agent-resources repository.
+    Add a slash command from a GitHub repository.
 
     The command will be copied to .claude/commands/<command-name>.md in the
     current directory (or ~/.claude/commands/ with --global).
 
     Example:
         add-command kasperjunge/commit
+        add-command kasperjunge/my-repo/commit
         add-command kasperjunge/review-pr --global
     """
     try:
-        username, command_name = parse_resource_ref(command_ref)
+        username, repo_name, command_name = parse_resource_ref(command_ref)
     except typer.BadParameter as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
     dest = get_destination("commands", global_install)
-    scope = "user" if global_install else "project"
 
     try:
         with fetch_spinner():
             command_path = fetch_resource(
-                username, command_name, dest, ResourceType.COMMAND, overwrite
+                username, repo_name, command_name, dest, ResourceType.COMMAND, overwrite
             )
-        print_success_message("command", command_name, username)
+        print_success_message("command", command_name, username, repo_name)
     except RepoNotFoundError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
