@@ -44,7 +44,6 @@ uv.lock
 htmlcov/
 
 .notes/
-.claude/
 
 # Node.js
 node_modules/
