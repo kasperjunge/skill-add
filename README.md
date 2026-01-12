@@ -64,7 +64,7 @@ agr add skill username/custom-repo/my-skill
 
 ## Create Your Own Library
 
-Ready to share your own skills? Create your personal toolkit in 30 seconds:
+Create your personal agent-resources library:
 
 ```bash
 agr init repo --github
@@ -78,7 +78,7 @@ agr init repo --github
 
 - A ready-to-use `agent-resources` repo on your GitHub
 - Example skill, command, and agent to learn from
-- Instant shareability — tell others:
+- Instant shareability:
 
 ```bash
 agr add skill <your-username>/hello-world
@@ -96,7 +96,7 @@ your-username/agent-resources/
     └── agents/          # Sub-agent .md files
 ```
 
-Push to GitHub. No registry, no publishing step.
+Push to GitHub.
 
 ---
 
