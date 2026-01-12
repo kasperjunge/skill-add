@@ -1,6 +1,6 @@
 ---
 title: Get Started - Agent Resources
-description: Install and share skills, commands, and sub-agents for Claude Code, Cursor, Copilot, Codex, and OpenCode. The npm/pip for AI agents.
+description: Install and share skills, commands, and sub-agents for Claude Code.
 ---
 
 # Get Started
@@ -122,5 +122,4 @@ agr init agent my-agent
 ## Next Steps
 
 - [Resource Types](what-is-agent-resources.md) — Learn about skills, commands, subagents, and packages
-- [Supported Tools](supported-platforms.md) — See which AI tools are supported
 - [Create Your Own Repo](create-your-own-repo.md) — Share your own resources

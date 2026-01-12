@@ -1,6 +1,6 @@
 site_name: Agent Resources
 site_url: https://kasperjunge.github.io/agent-resources/site/
-site_description: A package manager for AI coding tools. Share and install skills, commands, and sub-agents for Claude Code, Cursor, Copilot, and more.
+site_description: A package manager for Claude Code. Share and install skills, commands, and sub-agents.
 site_author: Kasper Junge
 repo_url: https://github.com/kasperjunge/agent-resources
 repo_name: kasperjunge/agent-resources
@@ -45,6 +45,6 @@ nav:
   - Resource Types: what-is-agent-resources.md
   - Install Agent Resources: install-agent-resources.md
   - Create Your Own Repo: create-your-own-repo.md
-  - Packaging: how-packaging-works.md
-  - Agent Resources SDK: agent-resources-sdk.md
-  - Supported Tools: supported-platforms.md
+  # - Packaging: how-packaging-works.md
+  # - Agent Resources SDK: agent-resources-sdk.md
+  # - Supported Tools: supported-platforms.md
