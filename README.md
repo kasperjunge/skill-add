@@ -9,7 +9,7 @@
 [![PyPI](https://img.shields.io/pypi/v/agr?color=blue)](https://pypi.org/project/agr/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[Try It](#try-it-now) • [Install](#install-any-resource) • [Create Your Own](#create-your-own) • [Community](#community-resources)
+[Try It](#try-it-now) • [Install](#install-any-resource) • [Update](#update-resources) • [Remove](#remove-resources) • [Create Your Own](#create-your-own) • [Community](#community-resources)
 
 </div>
 
@@ -39,7 +39,27 @@ agr add skill kasperjunge/hello-world
 ```bash
 agr add skill <username>/<skill-name>       # Skills
 agr add command <username>/<command-name>   # Slash commands
-agr add agent <username>/<agent-name>       # subagents
+agr add agent <username>/<agent-name>       # Sub-agents
+```
+
+## Update Resources
+
+Re-fetch a resource from GitHub to get the latest version:
+
+```bash
+agr update skill <username>/<skill-name>
+agr update command <username>/<command-name>
+agr update agent <username>/<agent-name>
+```
+
+## Remove Resources
+
+Delete a locally installed resource:
+
+```bash
+agr remove skill <skill-name>
+agr remove command <command-name>
+agr remove agent <agent-name>
 ```
 
 ### Default Repository Convention
