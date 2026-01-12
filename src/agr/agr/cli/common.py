@@ -1,6 +1,7 @@
 """Shared CLI utilities for agr commands."""
 
 import random
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -180,4 +181,112 @@ def handle_add_resource(
         print_success_message(resource_type.value, name, username, repo_name)
     except (RepoNotFoundError, ResourceNotFoundError, ResourceExistsError, AgrError) as e:
         typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+def get_local_resource_path(
+    name: str,
+    resource_subdir: str,
+    global_install: bool,
+) -> Path:
+    """
+    Build the local path for a resource based on its name and type.
+
+    Args:
+        name: Resource name (e.g., "hello-world")
+        resource_subdir: Subdirectory type ("skills", "commands", or "agents")
+        global_install: If True, look in ~/.claude/, else ./.claude/
+
+    Returns:
+        Path to the local resource (directory for skills, file for commands/agents)
+    """
+    dest = get_destination(resource_subdir, global_install)
+
+    if resource_subdir == "skills":
+        return dest / name
+    else:
+        # commands and agents are .md files
+        return dest / f"{name}.md"
+
+
+def handle_update_resource(
+    resource_ref: str,
+    resource_type: ResourceType,
+    resource_subdir: str,
+    global_install: bool = False,
+) -> None:
+    """
+    Generic handler for updating any resource type.
+
+    Re-fetches the resource from GitHub and overwrites the local copy.
+
+    Args:
+        resource_ref: Resource reference (e.g., "username/resource-name")
+        resource_type: Type of resource (SKILL, COMMAND, or AGENT)
+        resource_subdir: Destination subdirectory (e.g., "skills", "commands", "agents")
+        global_install: If True, update in ~/.claude/, else in ./.claude/
+    """
+    try:
+        username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
+    except typer.BadParameter as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Get local resource path to verify it exists
+    local_path = get_local_resource_path(name, resource_subdir, global_install)
+
+    if not local_path.exists():
+        typer.echo(
+            f"Error: {resource_type.value.capitalize()} '{name}' not found locally at {local_path}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    dest = get_destination(resource_subdir, global_install)
+
+    try:
+        with fetch_spinner():
+            fetch_resource(
+                username, repo_name, name, path_segments, dest, resource_type, overwrite=True
+            )
+        console.print(f"[green]Updated {resource_type.value} '{name}'[/green]")
+    except (RepoNotFoundError, ResourceNotFoundError, AgrError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+def handle_remove_resource(
+    name: str,
+    resource_type: ResourceType,
+    resource_subdir: str,
+    global_install: bool = False,
+) -> None:
+    """
+    Generic handler for removing any resource type.
+
+    Removes the resource immediately without confirmation.
+
+    Args:
+        name: Name of the resource to remove
+        resource_type: Type of resource (SKILL, COMMAND, or AGENT)
+        resource_subdir: Destination subdirectory (e.g., "skills", "commands", "agents")
+        global_install: If True, remove from ~/.claude/, else from ./.claude/
+    """
+    local_path = get_local_resource_path(name, resource_subdir, global_install)
+
+    if not local_path.exists():
+        typer.echo(
+            f"Error: {resource_type.value.capitalize()} '{name}' not found at {local_path}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        if local_path.is_dir():
+            shutil.rmtree(local_path)
+        else:
+            local_path.unlink()
+        console.print(f"[green]Removed {resource_type.value} '{name}'[/green]")
+    except OSError as e:
+        typer.echo(f"Error: Failed to remove resource: {e}", err=True)
         raise typer.Exit(1)
