@@ -5,7 +5,8 @@ from typing import Annotated
 import typer
 
 from agr.cli.common import handle_add_bundle, handle_add_resource
-from agr.fetcher import ResourceType
+from agr.tools import ResourceType
+from agr.tools.registry import get_tool_adapter
 
 app = typer.Typer(
     help="Add skills, commands, or agents from GitHub.",
@@ -37,6 +38,14 @@ def add_skill(
             help="Install to ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Add a skill from a GitHub repository.
 
@@ -47,8 +56,10 @@ def add_skill(
     Examples:
       agr add skill kasperjunge/hello-world
       agr add skill kasperjunge/my-repo/hello-world --global
+      agr add skill kasperjunge/hello-world --tool claude
     """
-    handle_add_resource(skill_ref, ResourceType.SKILL, "skills", overwrite, global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_add_resource(skill_ref, ResourceType.SKILL, overwrite, global_install, tool)
 
 
 @app.command("command")
@@ -75,6 +86,14 @@ def add_command(
             help="Install to ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Add a slash command from a GitHub repository.
 
@@ -85,8 +104,10 @@ def add_command(
     Examples:
       agr add command kasperjunge/hello
       agr add command kasperjunge/my-repo/hello --global
+      agr add command kasperjunge/hello --tool claude
     """
-    handle_add_resource(command_ref, ResourceType.COMMAND, "commands", overwrite, global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_add_resource(command_ref, ResourceType.COMMAND, overwrite, global_install, tool)
 
 
 @app.command("agent")
@@ -113,6 +134,14 @@ def add_agent(
             help="Install to ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Add a sub-agent from a GitHub repository.
 
@@ -123,8 +152,10 @@ def add_agent(
     Examples:
       agr add agent kasperjunge/hello-agent
       agr add agent kasperjunge/my-repo/hello-agent --global
+      agr add agent kasperjunge/hello-agent --tool claude
     """
-    handle_add_resource(agent_ref, ResourceType.AGENT, "agents", overwrite, global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_add_resource(agent_ref, ResourceType.AGENT, overwrite, global_install, tool)
 
 
 @app.command("bundle")

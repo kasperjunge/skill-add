@@ -4,7 +4,6 @@ import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 
 import httpx
@@ -16,53 +15,11 @@ from agr.exceptions import (
     ResourceExistsError,
     ResourceNotFoundError,
 )
+from agr.tools import ResourceType, ToolAdapter, ToolResourceConfig
+from agr.tools.registry import get_tool_adapter
 
 
-class ResourceType(Enum):
-    """Type of resource to fetch."""
-
-    SKILL = "skill"
-    COMMAND = "command"
-    AGENT = "agent"
-
-
-@dataclass
-class ResourceConfig:
-    """Configuration for a resource type."""
-
-    resource_type: ResourceType
-    source_subdir: str  # e.g., ".claude/skills", ".claude/commands"
-    dest_subdir: str  # e.g., "skills", "commands"
-    is_directory: bool  # True for skills, False for commands/agents
-    file_extension: str | None  # None for skills, ".md" for commands/agents
-
-
-RESOURCE_CONFIGS: dict[ResourceType, ResourceConfig] = {
-    ResourceType.SKILL: ResourceConfig(
-        resource_type=ResourceType.SKILL,
-        source_subdir=".claude/skills",
-        dest_subdir="skills",
-        is_directory=True,
-        file_extension=None,
-    ),
-    ResourceType.COMMAND: ResourceConfig(
-        resource_type=ResourceType.COMMAND,
-        source_subdir=".claude/commands",
-        dest_subdir="commands",
-        is_directory=False,
-        file_extension=".md",
-    ),
-    ResourceType.AGENT: ResourceConfig(
-        resource_type=ResourceType.AGENT,
-        source_subdir=".claude/agents",
-        dest_subdir="agents",
-        is_directory=False,
-        file_extension=".md",
-    ),
-}
-
-
-def _build_resource_path(base_dir: Path, config: ResourceConfig, path_segments: list[str]) -> Path:
+def _build_resource_path(base_dir: Path, config: ToolResourceConfig, path_segments: list[str]) -> Path:
     """Build a resource path from base directory and segments."""
     if config.is_directory:
         return base_dir / Path(*path_segments)
@@ -105,28 +62,16 @@ def fetch_resource(
     dest: Path,
     resource_type: ResourceType,
     overwrite: bool = False,
+    tool: ToolAdapter | None = None,
 ) -> Path:
-    """
-    Fetch a resource from a user's GitHub repo and copy it to dest.
+    """Fetch a resource from a user's GitHub repo and copy it to dest."""
+    if tool is None:
+        tool = get_tool_adapter()
 
-    Args:
-        username: GitHub username
-        repo_name: GitHub repository name
-        name: Display name of the resource (may contain colons for nested paths)
-        path_segments: Path segments for the resource (e.g., ['dir', 'hello-world'])
-        dest: Destination directory (e.g., .claude/skills/, .claude/commands/)
-        resource_type: Type of resource (SKILL, COMMAND, or AGENT)
-        overwrite: Whether to overwrite existing resource
+    config = tool.get_resource_config(resource_type)
+    if config is None:
+        raise AgrError(f"Tool '{tool.name}' does not support {resource_type.value}s")
 
-    Returns:
-        Path to the installed resource
-
-    Raises:
-        RepoNotFoundError: If the repository doesn't exist
-        ResourceNotFoundError: If the resource doesn't exist in the repo
-        ResourceExistsError: If resource exists locally and overwrite=False
-    """
-    config = RESOURCE_CONFIGS[resource_type]
     resource_dest = _build_resource_path(dest, config, path_segments)
 
     # Check if resource already exists locally
@@ -143,16 +88,19 @@ def fetch_resource(
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         repo_dir = _download_and_extract_tarball(tarball_url, username, repo_name, Path(tmp_dir))
-        source_base = repo_dir / config.source_subdir
+
+        # Try to find resource in source repo (prefer destination tool format, fall back to canonical)
+        source_subdir = f"{config.base_dir}/{config.subdir}"
+        source_base = repo_dir / source_subdir
         resource_source = _build_resource_path(source_base, config, path_segments)
 
         if not resource_source.exists():
             # Build display path for error message
             nested_path = "/".join(path_segments)
             if config.is_directory:
-                expected_location = f"{config.source_subdir}/{nested_path}/"
+                expected_location = f"{source_subdir}/{nested_path}/"
             else:
-                expected_location = f"{config.source_subdir}/{nested_path}{config.file_extension}"
+                expected_location = f"{source_subdir}/{nested_path}{config.file_extension}"
             raise ResourceNotFoundError(
                 f"{resource_type.value.capitalize()} '{name}' not found in {username}/{repo_name}.\n"
                 f"Expected location: {expected_location}"
@@ -248,21 +196,7 @@ class BundleRemoveResult:
 
 
 def discover_bundle_contents(repo_dir: Path, bundle_name: str) -> BundleContents:
-    """
-    Discover all resources within a bundle directory.
-
-    Looks for:
-    - .claude/skills/{bundle_name}/*/SKILL.md -> skill directories
-    - .claude/commands/{bundle_name}/*.md -> command files
-    - .claude/agents/{bundle_name}/*.md -> agent files
-
-    Args:
-        repo_dir: Path to extracted repository
-        bundle_name: Name of the bundle directory
-
-    Returns:
-        BundleContents with lists of discovered resources
-    """
+    """Discover all resources within a bundle directory."""
     contents = BundleContents(bundle_name=bundle_name)
 
     # Discover skills: look for subdirectories with SKILL.md
@@ -346,23 +280,7 @@ def fetch_bundle(
     dest_base: Path,
     overwrite: bool = False,
 ) -> BundleInstallResult:
-    """
-    Fetch and install all resources from a bundle.
-
-    Args:
-        username: GitHub username
-        repo_name: GitHub repository name
-        bundle_name: Name of the bundle directory
-        dest_base: Base destination directory (e.g., .claude/)
-        overwrite: Whether to overwrite existing resources
-
-    Returns:
-        BundleInstallResult with installed and skipped resources
-
-    Raises:
-        RepoNotFoundError: If the repository doesn't exist
-        BundleNotFoundError: If bundle directory doesn't exist in any location
-    """
+    """Fetch and install all resources from a bundle."""
     tarball_url = (
         f"https://github.com/{username}/{repo_name}/archive/refs/heads/main.tar.gz"
     )
@@ -415,19 +333,7 @@ def fetch_bundle(
 
 
 def remove_bundle(bundle_name: str, dest_base: Path) -> BundleRemoveResult:
-    """
-    Remove all local resources for a bundle.
-
-    Args:
-        bundle_name: Name of the bundle to remove
-        dest_base: Base directory (e.g., .claude/)
-
-    Returns:
-        BundleRemoveResult with lists of removed resources
-
-    Raises:
-        BundleNotFoundError: If bundle doesn't exist locally
-    """
+    """Remove all local resources for a bundle."""
     result = BundleRemoveResult()
 
     # Check and remove skills bundle directory

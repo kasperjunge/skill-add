@@ -5,7 +5,8 @@ from typing import Annotated
 import typer
 
 from agr.cli.common import handle_remove_bundle, handle_remove_resource
-from agr.fetcher import ResourceType
+from agr.tools import ResourceType
+from agr.tools.registry import get_tool_adapter
 
 app = typer.Typer(
     help="Remove skills, commands, or agents.",
@@ -30,6 +31,14 @@ def remove_skill(
             help="Remove from ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Remove a skill from the local installation.
 
@@ -38,8 +47,10 @@ def remove_skill(
     Examples:
       agr remove skill hello-world
       agr remove skill hello-world --global
+      agr remove skill hello-world --tool claude
     """
-    handle_remove_resource(name, ResourceType.SKILL, "skills", global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_remove_resource(name, ResourceType.SKILL, global_install, tool)
 
 
 @app.command("command")
@@ -59,6 +70,14 @@ def remove_command(
             help="Remove from ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Remove a slash command from the local installation.
 
@@ -67,8 +86,10 @@ def remove_command(
     Examples:
       agr remove command hello
       agr remove command hello --global
+      agr remove command hello --tool claude
     """
-    handle_remove_resource(name, ResourceType.COMMAND, "commands", global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_remove_resource(name, ResourceType.COMMAND, global_install, tool)
 
 
 @app.command("agent")
@@ -88,6 +109,14 @@ def remove_agent(
             help="Remove from ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Remove a sub-agent from the local installation.
 
@@ -96,8 +125,10 @@ def remove_agent(
     Examples:
       agr remove agent hello-agent
       agr remove agent hello-agent --global
+      agr remove agent hello-agent --tool claude
     """
-    handle_remove_resource(name, ResourceType.AGENT, "agents", global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_remove_resource(name, ResourceType.AGENT, global_install, tool)
 
 
 @app.command("bundle")

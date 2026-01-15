@@ -5,7 +5,8 @@ from typing import Annotated
 import typer
 
 from agr.cli.common import handle_update_bundle, handle_update_resource
-from agr.fetcher import ResourceType
+from agr.tools import ResourceType
+from agr.tools.registry import get_tool_adapter
 
 app = typer.Typer(
     help="Update skills, commands, or agents from GitHub.",
@@ -30,6 +31,14 @@ def update_skill(
             help="Update in ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Update a skill by re-fetching from GitHub.
 
@@ -40,8 +49,10 @@ def update_skill(
     Examples:
       agr update skill kasperjunge/hello-world
       agr update skill kasperjunge/my-repo/hello-world --global
+      agr update skill kasperjunge/hello-world --tool claude
     """
-    handle_update_resource(skill_ref, ResourceType.SKILL, "skills", global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_update_resource(skill_ref, ResourceType.SKILL, global_install, tool)
 
 
 @app.command("command")
@@ -61,6 +72,14 @@ def update_command(
             help="Update in ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Update a slash command by re-fetching from GitHub.
 
@@ -71,8 +90,10 @@ def update_command(
     Examples:
       agr update command kasperjunge/hello
       agr update command kasperjunge/my-repo/hello-world --global
+      agr update command kasperjunge/hello --tool claude
     """
-    handle_update_resource(command_ref, ResourceType.COMMAND, "commands", global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_update_resource(command_ref, ResourceType.COMMAND, global_install, tool)
 
 
 @app.command("agent")
@@ -92,6 +113,14 @@ def update_agent(
             help="Update in ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    tool_name: Annotated[
+        str | None,
+        typer.Option(
+            "--tool",
+            "-t",
+            help="Target tool (e.g., 'claude'). Defaults to auto-detect.",
+        ),
+    ] = None,
 ) -> None:
     """Update a sub-agent by re-fetching from GitHub.
 
@@ -102,8 +131,10 @@ def update_agent(
     Examples:
       agr update agent kasperjunge/hello-agent
       agr update agent kasperjunge/my-repo/hello-agent --global
+      agr update agent kasperjunge/hello-agent --tool claude
     """
-    handle_update_resource(agent_ref, ResourceType.AGENT, "agents", global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    handle_update_resource(agent_ref, ResourceType.AGENT, global_install, tool)
 
 
 @app.command("bundle")
