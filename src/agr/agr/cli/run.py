@@ -1,6 +1,5 @@
 """agrx - Run skills and commands without permanent installation."""
 
-import shutil
 import signal
 import subprocess
 import sys
@@ -15,7 +14,9 @@ from agr.cli.common import (
     parse_resource_ref,
 )
 from agr.exceptions import AgrError
-from agr.fetcher import RESOURCE_CONFIGS, ResourceType, fetch_resource
+from agr.fetcher import fetch_resource
+from agr.tools import ResourceType, ToolAdapter
+from agr.tools.registry import get_tool_adapter
 
 app = typer.Typer(name="agrx", help="Run skills and commands without permanent installation")
 console = Console()
@@ -23,16 +24,19 @@ console = Console()
 AGRX_PREFIX = "_agrx_"  # Prefix for temporary resources to avoid conflicts
 
 
-def _check_claude_cli() -> None:
-    """Check if Claude CLI is installed."""
-    if shutil.which("claude") is None:
-        console.print("[red]Error: Claude CLI not found.[/red]")
-        console.print("Install it from: https://claude.ai/download")
+def _check_tool_cli(tool: ToolAdapter) -> None:
+    """Check if the tool's CLI is installed."""
+    if not tool.is_installed():
+        console.print(f"[red]Error: {tool.name} CLI not found.[/red]")
+        if tool.cli_binary == "claude":
+            console.print("Install it from: https://claude.ai/download")
         raise typer.Exit(1)
 
 
 def _cleanup_resource(local_path: Path) -> None:
     """Clean up the temporary resource."""
+    import shutil
+
     if local_path.exists():
         if local_path.is_dir():
             shutil.rmtree(local_path)
@@ -40,9 +44,17 @@ def _cleanup_resource(local_path: Path) -> None:
             local_path.unlink()
 
 
-def _build_local_path(dest_dir: Path, prefixed_name: str, resource_type: ResourceType) -> Path:
+def _build_local_path(
+    dest_dir: Path,
+    prefixed_name: str,
+    resource_type: ResourceType,
+    tool: ToolAdapter,
+) -> Path:
     """Build the local path for a resource based on its type."""
-    config = RESOURCE_CONFIGS[resource_type]
+    config = tool.get_resource_config(resource_type)
+    if config is None:
+        raise AgrError(f"Tool '{tool.name}' does not support {resource_type.value}s")
+
     if config.is_directory:
         return dest_dir / prefixed_name
     return dest_dir / f"{prefixed_name}{config.file_extension}"
@@ -54,6 +66,7 @@ def _run_resource(
     prompt_or_args: str | None,
     interactive: bool,
     global_install: bool,
+    tool: ToolAdapter | None = None,
 ) -> None:
     """
     Download, run, and clean up a resource.
@@ -64,8 +77,12 @@ def _run_resource(
         prompt_or_args: Optional prompt or arguments to pass
         interactive: If True, start interactive Claude session
         global_install: If True, install to ~/.claude/ instead of ./.claude/
+        tool: Tool adapter to use (defaults to Claude Code)
     """
-    _check_claude_cli()
+    if tool is None:
+        tool = get_tool_adapter()
+
+    _check_tool_cli(tool)
 
     try:
         username, repo_name, name, path_segments = parse_resource_ref(ref)
@@ -73,14 +90,18 @@ def _run_resource(
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
-    config = RESOURCE_CONFIGS[resource_type]
+    config = tool.get_resource_config(resource_type)
+    if config is None:
+        console.print(f"[red]Error: {tool.name} does not support {resource_type.value}s[/red]")
+        raise typer.Exit(1)
+
     resource_name = path_segments[-1]
     prefixed_name = f"{AGRX_PREFIX}{resource_name}"
 
-    dest_dir = get_destination(config.dest_subdir, global_install)
+    dest_dir = get_destination(resource_type, global_install, tool)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    local_path = _build_local_path(dest_dir, prefixed_name, resource_type)
+    local_path = _build_local_path(dest_dir, prefixed_name, resource_type, tool)
 
     # Set up signal handlers for cleanup on interrupt
     cleanup_done = False
@@ -106,10 +127,11 @@ def _run_resource(
                 dest_dir,
                 resource_type,
                 overwrite=True,
+                tool=tool,
             )
 
         # Rename to prefixed name to avoid conflicts
-        original_path = _build_local_path(dest_dir, resource_name, resource_type)
+        original_path = _build_local_path(dest_dir, resource_name, resource_type, tool)
 
         if original_path.exists() and original_path != local_path:
             if local_path.exists():
@@ -118,15 +140,20 @@ def _run_resource(
 
         console.print(f"[dim]Running {resource_type.value} '{name}'...[/dim]")
 
+        cli_binary = tool.cli_binary
+        if cli_binary is None:
+            console.print(f"[red]Error: {tool.name} does not have a CLI[/red]")
+            raise typer.Exit(1)
+
         if interactive:
-            # Start interactive Claude session
-            subprocess.run(["claude"], check=False)
+            # Start interactive session
+            subprocess.run([cli_binary], check=False)
         else:
             # Build prompt: /<prefixed_name> [prompt_or_args]
-            claude_prompt = f"/{prefixed_name}"
+            prompt = f"/{prefixed_name}"
             if prompt_or_args:
-                claude_prompt += f" {prompt_or_args}"
-            subprocess.run(["claude", "-p", claude_prompt], check=False)
+                prompt += f" {prompt_or_args}"
+            subprocess.run([cli_binary, "-p", prompt], check=False)
 
     except AgrError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -146,14 +173,18 @@ def run_skill(
     skill_ref: str = typer.Argument(..., help="Skill reference (e.g., username/skill-name)"),
     prompt: str = typer.Argument(None, help="Prompt to send with the skill"),
     interactive: bool = typer.Option(
-        False, "--interactive", "-i", help="Start interactive Claude session"
+        False, "--interactive", "-i", help="Start interactive session"
     ),
     global_install: bool = typer.Option(
-        False, "--global", "-g", help="Install temporarily to ~/.claude/ instead of ./.claude/"
+        False, "--global", "-g", help="Install temporarily to ~/.<tool>/ instead of ./.<tool>/"
+    ),
+    tool_name: str | None = typer.Option(
+        None, "--tool", "-t", help="Target tool (e.g., 'claude'). Defaults to auto-detect."
     ),
 ) -> None:
     """Run a skill temporarily without permanent installation."""
-    _run_resource(skill_ref, ResourceType.SKILL, prompt, interactive, global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    _run_resource(skill_ref, ResourceType.SKILL, prompt, interactive, global_install, tool)
 
 
 @app.command("command")
@@ -161,14 +192,18 @@ def run_command(
     command_ref: str = typer.Argument(..., help="Command reference (e.g., username/command-name)"),
     args: str = typer.Argument(None, help="Arguments to pass to the command"),
     interactive: bool = typer.Option(
-        False, "--interactive", "-i", help="Start interactive Claude session"
+        False, "--interactive", "-i", help="Start interactive session"
     ),
     global_install: bool = typer.Option(
-        False, "--global", "-g", help="Install temporarily to ~/.claude/ instead of ./.claude/"
+        False, "--global", "-g", help="Install temporarily to ~/.<tool>/ instead of ./.<tool>/"
+    ),
+    tool_name: str | None = typer.Option(
+        None, "--tool", "-t", help="Target tool (e.g., 'claude'). Defaults to auto-detect."
     ),
 ) -> None:
     """Run a command temporarily without permanent installation."""
-    _run_resource(command_ref, ResourceType.COMMAND, args, interactive, global_install)
+    tool = get_tool_adapter(tool_name) if tool_name else None
+    _run_resource(command_ref, ResourceType.COMMAND, args, interactive, global_install, tool)
 
 
 if __name__ == "__main__":

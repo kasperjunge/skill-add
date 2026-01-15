@@ -20,11 +20,12 @@ from agr.exceptions import (
 from agr.fetcher import (
     BundleInstallResult,
     BundleRemoveResult,
-    ResourceType,
     fetch_bundle,
     fetch_resource,
     remove_bundle,
 )
+from agr.tools import ResourceType, ToolAdapter
+from agr.tools.registry import get_tool_adapter
 
 console = Console()
 
@@ -112,25 +113,48 @@ def parse_resource_ref(ref: str) -> tuple[str, str, str, list[str]]:
     return username, repo, name, path_segments
 
 
-def get_base_path(global_install: bool) -> Path:
-    """Get the base .claude directory path."""
+def get_base_path(global_install: bool, tool: ToolAdapter | None = None) -> Path:
+    """Get the base directory path for a tool.
+
+    Args:
+        global_install: If True, use home directory, else current working directory
+        tool: Tool adapter to use (defaults to Claude Code)
+
+    Returns:
+        Path to the base directory (e.g., ~/.claude or ./.claude)
+    """
+    if tool is None:
+        tool = get_tool_adapter()
+
     if global_install:
-        return Path.home() / ".claude"
-    return Path.cwd() / ".claude"
+        return Path.home() / tool.base_directory
+    return Path.cwd() / tool.base_directory
 
 
-def get_destination(resource_subdir: str, global_install: bool) -> Path:
+def get_destination(
+    resource_type: ResourceType,
+    global_install: bool,
+    tool: ToolAdapter | None = None,
+) -> Path:
     """
     Get the destination directory for a resource.
 
     Args:
-        resource_subdir: The subdirectory name (e.g., "skills", "commands", "agents")
-        global_install: If True, install to ~/.claude/, else to ./.claude/
+        resource_type: The type of resource (SKILL, COMMAND, or AGENT)
+        global_install: If True, install to ~/.<tool>/, else to ./.<tool>/
+        tool: Tool adapter to use (defaults to Claude Code)
 
     Returns:
         Path to the destination directory
     """
-    return get_base_path(global_install) / resource_subdir
+    if tool is None:
+        tool = get_tool_adapter()
+
+    config = tool.get_resource_config(resource_type)
+    if config is None:
+        raise AgrError(f"Tool '{tool.name}' does not support {resource_type.value}s")
+
+    return get_base_path(global_install, tool) / config.subdir
 
 
 @contextmanager
@@ -161,9 +185,9 @@ def print_success_message(resource_type: str, name: str, username: str, repo: st
 def handle_add_resource(
     resource_ref: str,
     resource_type: ResourceType,
-    resource_subdir: str,
     overwrite: bool = False,
     global_install: bool = False,
+    tool: ToolAdapter | None = None,
 ) -> None:
     """
     Generic handler for adding any resource type.
@@ -171,22 +195,25 @@ def handle_add_resource(
     Args:
         resource_ref: Resource reference (e.g., "username/resource-name")
         resource_type: Type of resource (SKILL, COMMAND, or AGENT)
-        resource_subdir: Destination subdirectory (e.g., "skills", "commands", "agents")
         overwrite: Whether to overwrite existing resource
         global_install: If True, install to ~/.claude/, else to ./.claude/
+        tool: Tool adapter to use (defaults to Claude Code)
     """
+    if tool is None:
+        tool = get_tool_adapter()
+
     try:
         username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
     except typer.BadParameter as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
-    dest = get_destination(resource_subdir, global_install)
+    dest = get_destination(resource_type, global_install, tool)
 
     try:
         with fetch_spinner():
             fetch_resource(
-                username, repo_name, name, path_segments, dest, resource_type, overwrite
+                username, repo_name, name, path_segments, dest, resource_type, overwrite, tool
             )
         print_success_message(resource_type.value, name, username, repo_name)
     except (RepoNotFoundError, ResourceNotFoundError, ResourceExistsError, AgrError) as e:
@@ -196,34 +223,42 @@ def handle_add_resource(
 
 def get_local_resource_path(
     name: str,
-    resource_subdir: str,
+    resource_type: ResourceType,
     global_install: bool,
+    tool: ToolAdapter | None = None,
 ) -> Path:
     """
     Build the local path for a resource based on its name and type.
 
     Args:
         name: Resource name (e.g., "hello-world")
-        resource_subdir: Subdirectory type ("skills", "commands", or "agents")
+        resource_type: Type of resource (SKILL, COMMAND, or AGENT)
         global_install: If True, look in ~/.claude/, else ./.claude/
+        tool: Tool adapter to use (defaults to Claude Code)
 
     Returns:
         Path to the local resource (directory for skills, file for commands/agents)
     """
-    dest = get_destination(resource_subdir, global_install)
+    if tool is None:
+        tool = get_tool_adapter()
 
-    if resource_subdir == "skills":
+    config = tool.get_resource_config(resource_type)
+    if config is None:
+        raise AgrError(f"Tool '{tool.name}' does not support {resource_type.value}s")
+
+    dest = get_destination(resource_type, global_install, tool)
+
+    if config.is_directory:
         return dest / name
     else:
-        # commands and agents are .md files
-        return dest / f"{name}.md"
+        return dest / f"{name}{config.file_extension}"
 
 
 def handle_update_resource(
     resource_ref: str,
     resource_type: ResourceType,
-    resource_subdir: str,
     global_install: bool = False,
+    tool: ToolAdapter | None = None,
 ) -> None:
     """
     Generic handler for updating any resource type.
@@ -233,9 +268,12 @@ def handle_update_resource(
     Args:
         resource_ref: Resource reference (e.g., "username/resource-name")
         resource_type: Type of resource (SKILL, COMMAND, or AGENT)
-        resource_subdir: Destination subdirectory (e.g., "skills", "commands", "agents")
         global_install: If True, update in ~/.claude/, else in ./.claude/
+        tool: Tool adapter to use (defaults to Claude Code)
     """
+    if tool is None:
+        tool = get_tool_adapter()
+
     try:
         username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
     except typer.BadParameter as e:
@@ -243,7 +281,7 @@ def handle_update_resource(
         raise typer.Exit(1)
 
     # Get local resource path to verify it exists
-    local_path = get_local_resource_path(name, resource_subdir, global_install)
+    local_path = get_local_resource_path(name, resource_type, global_install, tool)
 
     if not local_path.exists():
         typer.echo(
@@ -252,12 +290,12 @@ def handle_update_resource(
         )
         raise typer.Exit(1)
 
-    dest = get_destination(resource_subdir, global_install)
+    dest = get_destination(resource_type, global_install, tool)
 
     try:
         with fetch_spinner():
             fetch_resource(
-                username, repo_name, name, path_segments, dest, resource_type, overwrite=True
+                username, repo_name, name, path_segments, dest, resource_type, overwrite=True, tool=tool
             )
         console.print(f"[green]Updated {resource_type.value} '{name}'[/green]")
     except (RepoNotFoundError, ResourceNotFoundError, AgrError) as e:
@@ -268,8 +306,8 @@ def handle_update_resource(
 def handle_remove_resource(
     name: str,
     resource_type: ResourceType,
-    resource_subdir: str,
     global_install: bool = False,
+    tool: ToolAdapter | None = None,
 ) -> None:
     """
     Generic handler for removing any resource type.
@@ -279,10 +317,13 @@ def handle_remove_resource(
     Args:
         name: Name of the resource to remove
         resource_type: Type of resource (SKILL, COMMAND, or AGENT)
-        resource_subdir: Destination subdirectory (e.g., "skills", "commands", "agents")
         global_install: If True, remove from ~/.claude/, else from ./.claude/
+        tool: Tool adapter to use (defaults to Claude Code)
     """
-    local_path = get_local_resource_path(name, resource_subdir, global_install)
+    if tool is None:
+        tool = get_tool_adapter()
+
+    local_path = get_local_resource_path(name, resource_type, global_install, tool)
 
     if not local_path.exists():
         typer.echo(

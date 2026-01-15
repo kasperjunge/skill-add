@@ -4,7 +4,6 @@ import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 
 import httpx
@@ -16,53 +15,11 @@ from agr.exceptions import (
     ResourceExistsError,
     ResourceNotFoundError,
 )
+from agr.tools import ResourceType, ToolAdapter, ToolResourceConfig
+from agr.tools.registry import get_registry, get_tool_adapter
 
 
-class ResourceType(Enum):
-    """Type of resource to fetch."""
-
-    SKILL = "skill"
-    COMMAND = "command"
-    AGENT = "agent"
-
-
-@dataclass
-class ResourceConfig:
-    """Configuration for a resource type."""
-
-    resource_type: ResourceType
-    source_subdir: str  # e.g., ".claude/skills", ".claude/commands"
-    dest_subdir: str  # e.g., "skills", "commands"
-    is_directory: bool  # True for skills, False for commands/agents
-    file_extension: str | None  # None for skills, ".md" for commands/agents
-
-
-RESOURCE_CONFIGS: dict[ResourceType, ResourceConfig] = {
-    ResourceType.SKILL: ResourceConfig(
-        resource_type=ResourceType.SKILL,
-        source_subdir=".claude/skills",
-        dest_subdir="skills",
-        is_directory=True,
-        file_extension=None,
-    ),
-    ResourceType.COMMAND: ResourceConfig(
-        resource_type=ResourceType.COMMAND,
-        source_subdir=".claude/commands",
-        dest_subdir="commands",
-        is_directory=False,
-        file_extension=".md",
-    ),
-    ResourceType.AGENT: ResourceConfig(
-        resource_type=ResourceType.AGENT,
-        source_subdir=".claude/agents",
-        dest_subdir="agents",
-        is_directory=False,
-        file_extension=".md",
-    ),
-}
-
-
-def _build_resource_path(base_dir: Path, config: ResourceConfig, path_segments: list[str]) -> Path:
+def _build_resource_path(base_dir: Path, config: ToolResourceConfig, path_segments: list[str]) -> Path:
     """Build a resource path from base directory and segments."""
     if config.is_directory:
         return base_dir / Path(*path_segments)
@@ -105,6 +62,7 @@ def fetch_resource(
     dest: Path,
     resource_type: ResourceType,
     overwrite: bool = False,
+    tool: ToolAdapter | None = None,
 ) -> Path:
     """
     Fetch a resource from a user's GitHub repo and copy it to dest.
@@ -117,6 +75,7 @@ def fetch_resource(
         dest: Destination directory (e.g., .claude/skills/, .claude/commands/)
         resource_type: Type of resource (SKILL, COMMAND, or AGENT)
         overwrite: Whether to overwrite existing resource
+        tool: Tool adapter to use (defaults to Claude Code)
 
     Returns:
         Path to the installed resource
@@ -126,7 +85,13 @@ def fetch_resource(
         ResourceNotFoundError: If the resource doesn't exist in the repo
         ResourceExistsError: If resource exists locally and overwrite=False
     """
-    config = RESOURCE_CONFIGS[resource_type]
+    if tool is None:
+        tool = get_tool_adapter()
+
+    config = tool.get_resource_config(resource_type)
+    if config is None:
+        raise AgrError(f"Tool '{tool.name}' does not support {resource_type.value}s")
+
     resource_dest = _build_resource_path(dest, config, path_segments)
 
     # Check if resource already exists locally
@@ -143,16 +108,19 @@ def fetch_resource(
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         repo_dir = _download_and_extract_tarball(tarball_url, username, repo_name, Path(tmp_dir))
-        source_base = repo_dir / config.source_subdir
+
+        # Try to find resource in source repo (prefer destination tool format, fall back to canonical)
+        source_subdir = f"{config.base_dir}/{config.subdir}"
+        source_base = repo_dir / source_subdir
         resource_source = _build_resource_path(source_base, config, path_segments)
 
         if not resource_source.exists():
             # Build display path for error message
             nested_path = "/".join(path_segments)
             if config.is_directory:
-                expected_location = f"{config.source_subdir}/{nested_path}/"
+                expected_location = f"{source_subdir}/{nested_path}/"
             else:
-                expected_location = f"{config.source_subdir}/{nested_path}{config.file_extension}"
+                expected_location = f"{source_subdir}/{nested_path}{config.file_extension}"
             raise ResourceNotFoundError(
                 f"{resource_type.value.capitalize()} '{name}' not found in {username}/{repo_name}.\n"
                 f"Expected location: {expected_location}"
