@@ -46,18 +46,17 @@ def _cleanup_resource(local_path: Path) -> None:
 
 def _build_local_path(
     dest_dir: Path,
-    prefixed_name: str,
+    name: str,
     resource_type: ResourceType,
     tool: ToolAdapter,
 ) -> Path:
-    """Build the local path for a resource based on its type."""
+    """Build the local path for a resource."""
     config = tool.get_resource_config(resource_type)
     if config is None:
         raise AgrError(f"Tool '{tool.name}' does not support {resource_type.value}s")
-
     if config.is_directory:
-        return dest_dir / prefixed_name
-    return dest_dir / f"{prefixed_name}{config.file_extension}"
+        return dest_dir / name
+    return dest_dir / f"{name}{config.file_extension}"
 
 
 def _run_resource(
@@ -68,17 +67,7 @@ def _run_resource(
     global_install: bool,
     tool: ToolAdapter | None = None,
 ) -> None:
-    """
-    Download, run, and clean up a resource.
-
-    Args:
-        ref: Resource reference (e.g., "username/skill-name")
-        resource_type: Type of resource (SKILL or COMMAND)
-        prompt_or_args: Optional prompt or arguments to pass
-        interactive: If True, start interactive Claude session
-        global_install: If True, install to ~/.claude/ instead of ./.claude/
-        tool: Tool adapter to use (defaults to Claude Code)
-    """
+    """Download, run, and clean up a resource."""
     if tool is None:
         tool = get_tool_adapter()
 

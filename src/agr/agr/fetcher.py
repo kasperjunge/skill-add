@@ -16,7 +16,7 @@ from agr.exceptions import (
     ResourceNotFoundError,
 )
 from agr.tools import ResourceType, ToolAdapter, ToolResourceConfig
-from agr.tools.registry import get_registry, get_tool_adapter
+from agr.tools.registry import get_tool_adapter
 
 
 def _build_resource_path(base_dir: Path, config: ToolResourceConfig, path_segments: list[str]) -> Path:
@@ -64,27 +64,7 @@ def fetch_resource(
     overwrite: bool = False,
     tool: ToolAdapter | None = None,
 ) -> Path:
-    """
-    Fetch a resource from a user's GitHub repo and copy it to dest.
-
-    Args:
-        username: GitHub username
-        repo_name: GitHub repository name
-        name: Display name of the resource (may contain colons for nested paths)
-        path_segments: Path segments for the resource (e.g., ['dir', 'hello-world'])
-        dest: Destination directory (e.g., .claude/skills/, .claude/commands/)
-        resource_type: Type of resource (SKILL, COMMAND, or AGENT)
-        overwrite: Whether to overwrite existing resource
-        tool: Tool adapter to use (defaults to Claude Code)
-
-    Returns:
-        Path to the installed resource
-
-    Raises:
-        RepoNotFoundError: If the repository doesn't exist
-        ResourceNotFoundError: If the resource doesn't exist in the repo
-        ResourceExistsError: If resource exists locally and overwrite=False
-    """
+    """Fetch a resource from a user's GitHub repo and copy it to dest."""
     if tool is None:
         tool = get_tool_adapter()
 
@@ -216,21 +196,7 @@ class BundleRemoveResult:
 
 
 def discover_bundle_contents(repo_dir: Path, bundle_name: str) -> BundleContents:
-    """
-    Discover all resources within a bundle directory.
-
-    Looks for:
-    - .claude/skills/{bundle_name}/*/SKILL.md -> skill directories
-    - .claude/commands/{bundle_name}/*.md -> command files
-    - .claude/agents/{bundle_name}/*.md -> agent files
-
-    Args:
-        repo_dir: Path to extracted repository
-        bundle_name: Name of the bundle directory
-
-    Returns:
-        BundleContents with lists of discovered resources
-    """
+    """Discover all resources within a bundle directory."""
     contents = BundleContents(bundle_name=bundle_name)
 
     # Discover skills: look for subdirectories with SKILL.md
@@ -314,23 +280,7 @@ def fetch_bundle(
     dest_base: Path,
     overwrite: bool = False,
 ) -> BundleInstallResult:
-    """
-    Fetch and install all resources from a bundle.
-
-    Args:
-        username: GitHub username
-        repo_name: GitHub repository name
-        bundle_name: Name of the bundle directory
-        dest_base: Base destination directory (e.g., .claude/)
-        overwrite: Whether to overwrite existing resources
-
-    Returns:
-        BundleInstallResult with installed and skipped resources
-
-    Raises:
-        RepoNotFoundError: If the repository doesn't exist
-        BundleNotFoundError: If bundle directory doesn't exist in any location
-    """
+    """Fetch and install all resources from a bundle."""
     tarball_url = (
         f"https://github.com/{username}/{repo_name}/archive/refs/heads/main.tar.gz"
     )
@@ -383,19 +333,7 @@ def fetch_bundle(
 
 
 def remove_bundle(bundle_name: str, dest_base: Path) -> BundleRemoveResult:
-    """
-    Remove all local resources for a bundle.
-
-    Args:
-        bundle_name: Name of the bundle to remove
-        dest_base: Base directory (e.g., .claude/)
-
-    Returns:
-        BundleRemoveResult with lists of removed resources
-
-    Raises:
-        BundleNotFoundError: If bundle doesn't exist locally
-    """
+    """Remove all local resources for a bundle."""
     result = BundleRemoveResult()
 
     # Check and remove skills bundle directory

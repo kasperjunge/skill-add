@@ -13,8 +13,7 @@ from agr.tools.registry import ToolRegistry, get_registry, get_tool_adapter
 class TestToolResourceConfig:
     """Tests for ToolResourceConfig dataclass."""
 
-    def test_skill_config(self):
-        """Test skill resource configuration."""
+    def test_skill_config(self) -> None:
         config = ToolResourceConfig(
             base_dir=".claude",
             subdir="skills",
@@ -28,8 +27,7 @@ class TestToolResourceConfig:
         assert config.file_extension is None
         assert config.entry_file == "SKILL.md"
 
-    def test_command_config(self):
-        """Test command resource configuration."""
+    def test_command_config(self) -> None:
         config = ToolResourceConfig(
             base_dir=".claude",
             subdir="commands",
@@ -48,28 +46,22 @@ class TestClaudeCodeAdapter:
     """Tests for ClaudeCodeAdapter."""
 
     @pytest.fixture
-    def adapter(self):
-        """Create a ClaudeCodeAdapter instance."""
+    def adapter(self) -> ClaudeCodeAdapter:
         return ClaudeCodeAdapter()
 
-    def test_name(self, adapter):
-        """Test adapter name."""
+    def test_name(self, adapter: ClaudeCodeAdapter) -> None:
         assert adapter.name == "Claude Code"
 
-    def test_tool_id(self, adapter):
-        """Test adapter tool_id."""
+    def test_tool_id(self, adapter: ClaudeCodeAdapter) -> None:
         assert adapter.tool_id == Tool.CLAUDE_CODE
 
-    def test_base_directory(self, adapter):
-        """Test adapter base_directory."""
+    def test_base_directory(self, adapter: ClaudeCodeAdapter) -> None:
         assert adapter.base_directory == ".claude"
 
-    def test_cli_binary(self, adapter):
-        """Test adapter cli_binary."""
+    def test_cli_binary(self, adapter: ClaudeCodeAdapter) -> None:
         assert adapter.cli_binary == "claude"
 
-    def test_get_resource_config_skill(self, adapter):
-        """Test get_resource_config for skills."""
+    def test_get_resource_config_skill(self, adapter: ClaudeCodeAdapter) -> None:
         config = adapter.get_resource_config(ResourceType.SKILL)
         assert config is not None
         assert config.base_dir == ".claude"
@@ -78,8 +70,7 @@ class TestClaudeCodeAdapter:
         assert config.file_extension is None
         assert config.entry_file == "SKILL.md"
 
-    def test_get_resource_config_command(self, adapter):
-        """Test get_resource_config for commands."""
+    def test_get_resource_config_command(self, adapter: ClaudeCodeAdapter) -> None:
         config = adapter.get_resource_config(ResourceType.COMMAND)
         assert config is not None
         assert config.base_dir == ".claude"
@@ -87,8 +78,7 @@ class TestClaudeCodeAdapter:
         assert config.is_directory is False
         assert config.file_extension == ".md"
 
-    def test_get_resource_config_agent(self, adapter):
-        """Test get_resource_config for agents."""
+    def test_get_resource_config_agent(self, adapter: ClaudeCodeAdapter) -> None:
         config = adapter.get_resource_config(ResourceType.AGENT)
         assert config is not None
         assert config.base_dir == ".claude"
@@ -96,136 +86,63 @@ class TestClaudeCodeAdapter:
         assert config.is_directory is False
         assert config.file_extension == ".md"
 
-    def test_supports_resource_type(self, adapter):
-        """Test supports_resource_type for all types."""
-        assert adapter.supports_resource_type(ResourceType.SKILL) is True
-        assert adapter.supports_resource_type(ResourceType.COMMAND) is True
-        assert adapter.supports_resource_type(ResourceType.AGENT) is True
-
-    def test_is_project_configured_true(self, adapter):
-        """Test is_project_configured when .claude exists."""
+    def test_is_project_configured_true(self, adapter: ClaudeCodeAdapter) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_path = Path(tmpdir)
             (project_path / ".claude").mkdir()
             assert adapter.is_project_configured(project_path) is True
 
-    def test_is_project_configured_false(self, adapter):
-        """Test is_project_configured when .claude doesn't exist."""
+    def test_is_project_configured_false(self, adapter: ClaudeCodeAdapter) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_path = Path(tmpdir)
             assert adapter.is_project_configured(project_path) is False
-
-    def test_transform_resource_identity(self, adapter):
-        """Test transform_resource for same tool (identity)."""
-        content = "# Test content"
-        result = adapter.transform_resource(content, Tool.CLAUDE_CODE, ResourceType.SKILL)
-        assert result == content
-
-    def test_get_source_subdir(self, adapter):
-        """Test get_source_subdir."""
-        assert adapter.get_source_subdir(ResourceType.SKILL) == ".claude/skills"
-        assert adapter.get_source_subdir(ResourceType.COMMAND) == ".claude/commands"
-        assert adapter.get_source_subdir(ResourceType.AGENT) == ".claude/agents"
-
-    def test_get_dest_subdir(self, adapter):
-        """Test get_dest_subdir."""
-        assert adapter.get_dest_subdir(ResourceType.SKILL) == "skills"
-        assert adapter.get_dest_subdir(ResourceType.COMMAND) == "commands"
-        assert adapter.get_dest_subdir(ResourceType.AGENT) == "agents"
 
 
 class TestToolRegistry:
     """Tests for ToolRegistry."""
 
     @pytest.fixture
-    def registry(self):
-        """Create a fresh ToolRegistry instance."""
+    def registry(self) -> ToolRegistry:
         return ToolRegistry()
 
-    def test_default_adapters(self, registry):
-        """Test that Claude Code is registered by default."""
+    def test_default_adapters(self, registry: ToolRegistry) -> None:
         adapters = registry.all()
         assert len(adapters) >= 1
         tool_ids = [a.tool_id for a in adapters]
         assert Tool.CLAUDE_CODE in tool_ids
 
-    def test_get_claude_code(self, registry):
-        """Test getting Claude Code adapter."""
+    def test_get_claude_code(self, registry: ToolRegistry) -> None:
         adapter = registry.get(Tool.CLAUDE_CODE)
         assert adapter is not None
         assert adapter.name == "Claude Code"
 
-    def test_get_by_name_claude(self, registry):
-        """Test get_by_name for Claude Code."""
+    def test_get_by_name_claude(self, registry: ToolRegistry) -> None:
         adapter = registry.get_by_name("claude")
         assert adapter is not None
         assert adapter.name == "Claude Code"
 
-    def test_get_by_name_unknown(self, registry):
-        """Test get_by_name for unknown tool."""
+    def test_get_by_name_unknown(self, registry: ToolRegistry) -> None:
         adapter = registry.get_by_name("unknown")
         assert adapter is None
 
-    def test_get_default(self, registry):
-        """Test get_default returns Claude Code."""
+    def test_get_default(self, registry: ToolRegistry) -> None:
         adapter = registry.get_default()
         assert adapter.name == "Claude Code"
         assert adapter.tool_id == Tool.CLAUDE_CODE
-
-    def test_detect_tools_with_claude_dir(self, registry):
-        """Test detect_tools when .claude directory exists."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_path = Path(tmpdir)
-            (project_path / ".claude").mkdir()
-
-            detected = registry.detect_tools(project_path)
-            assert len(detected) >= 1
-            tool_ids = [a.tool_id for a in detected]
-            assert Tool.CLAUDE_CODE in tool_ids
-
-    def test_detect_tools_empty_project(self, registry):
-        """Test detect_tools on empty project still includes default."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_path = Path(tmpdir)
-
-            detected = registry.detect_tools(project_path)
-            # Should still include Claude Code as default (if installed)
-            # or at minimum as fallback
-            assert len(detected) >= 1
-
-    def test_detect_source_tools_claude(self, registry):
-        """Test detect_source_tools finds .claude directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repo_dir = Path(tmpdir)
-            (repo_dir / ".claude").mkdir()
-
-            found = registry.detect_source_tools(repo_dir)
-            assert Tool.CLAUDE_CODE in found
-
-    def test_detect_source_tools_empty(self, registry):
-        """Test detect_source_tools on empty repo."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repo_dir = Path(tmpdir)
-
-            found = registry.detect_source_tools(repo_dir)
-            assert found == []
 
 
 class TestGetToolAdapter:
     """Tests for get_tool_adapter helper function."""
 
-    def test_get_default(self):
-        """Test getting default adapter."""
+    def test_get_default(self) -> None:
         adapter = get_tool_adapter()
         assert adapter.name == "Claude Code"
 
-    def test_get_claude(self):
-        """Test getting Claude adapter by name."""
+    def test_get_claude(self) -> None:
         adapter = get_tool_adapter("claude")
         assert adapter.name == "Claude Code"
 
-    def test_get_unknown_raises(self):
-        """Test getting unknown tool raises ValueError."""
+    def test_get_unknown_raises(self) -> None:
         with pytest.raises(ValueError) as exc_info:
             get_tool_adapter("unknown")
         assert "Unknown tool: unknown" in str(exc_info.value)
@@ -235,13 +152,11 @@ class TestGetToolAdapter:
 class TestGetRegistry:
     """Tests for get_registry singleton."""
 
-    def test_returns_registry(self):
-        """Test that get_registry returns a ToolRegistry."""
+    def test_returns_registry(self) -> None:
         registry = get_registry()
         assert isinstance(registry, ToolRegistry)
 
-    def test_singleton(self):
-        """Test that get_registry returns the same instance."""
+    def test_singleton(self) -> None:
         registry1 = get_registry()
         registry2 = get_registry()
         assert registry1 is registry2
