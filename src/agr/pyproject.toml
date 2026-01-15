@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 agr = "agr.cli.main:app"
+agrx = "agr.cli.run:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agr"]
