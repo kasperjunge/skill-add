@@ -125,10 +125,47 @@ def _install_file(source: Path, dest: Path, force: bool = False) -> bool:
     return True
 
 
+def _find_resource_types_in_repo(
+    repo_dir: Path,
+    path_segments: list[str],
+) -> dict[ResourceType, Path]:
+    """Find all resource types that match the given name in a repo.
+
+    Args:
+        repo_dir: Path to the extracted repository
+        path_segments: Path segments to the resource (e.g., ["hello-world"])
+
+    Returns:
+        Dict mapping ResourceType to the source path for each found type
+    """
+    found: dict[ResourceType, Path] = {}
+
+    for resource_type, subdir in [
+        (ResourceType.SKILL, "skills"),
+        (ResourceType.COMMAND, "commands"),
+        (ResourceType.AGENT, "agents"),
+    ]:
+        source_base = repo_dir / ".claude" / subdir
+        source_path = source_base / "/".join(path_segments)
+
+        if resource_type == ResourceType.SKILL:
+            # Skills are directories with SKILL.md
+            if source_path.is_dir() and (source_path / "SKILL.md").exists():
+                found[resource_type] = source_path
+        else:
+            # Commands and agents are .md files
+            md_path = source_path.with_suffix(".md") if not source_path.suffix else source_path
+            if md_path.is_file():
+                found[resource_type] = md_path
+
+    return found
+
+
 def sync_dependency(
     resolved: ResolvedRef,
     dest_base: Path,
     force: bool = False,
+    specified_type: str | None = None,
 ) -> SyncResult:
     """Sync a single dependency.
 
@@ -136,6 +173,7 @@ def sync_dependency(
         resolved: Resolved reference
         dest_base: Base .claude directory
         force: Force overwrite even if modified
+        specified_type: Optional type constraint ("skill", "command", or "agent")
 
     Returns:
         SyncResult for this dependency
@@ -171,6 +209,7 @@ def sync_dependency(
                 dest_base,
                 force,
                 result,
+                specified_type,
             )
 
     return result
@@ -182,50 +221,95 @@ def _sync_single_resource(
     dest_base: Path,
     force: bool,
     result: SyncResult,
+    specified_type: str | None = None,
 ) -> None:
-    """Sync a single resource from a repo."""
+    """Sync a single resource from a repo.
+
+    Args:
+        repo_dir: Path to the extracted repository
+        resolved: Resolved reference info
+        dest_base: Base .claude directory
+        force: Force overwrite even if modified
+        result: SyncResult to update
+        specified_type: Optional type constraint ("skill", "command", or "agent")
+    """
     resource_name = resolved.path_segments[-1] if resolved.path_segments else resolved.resource_name
 
-    # Try to find the resource in skills, commands, or agents
-    for resource_type, subdir in [
-        (ResourceType.SKILL, "skills"),
-        (ResourceType.COMMAND, "commands"),
-        (ResourceType.AGENT, "agents"),
-    ]:
-        source_base = repo_dir / ".claude" / subdir
-        source_path = source_base / "/".join(resolved.path_segments)
+    # Find all matching resource types
+    found_types = _find_resource_types_in_repo(repo_dir, resolved.path_segments)
 
-        # For commands/agents, add .md extension
-        if resource_type != ResourceType.SKILL:
-            source_path = source_path.with_suffix(".md") if not source_path.suffix else source_path
+    if not found_types:
+        result.failed.append((resolved.ref, f"Resource '{resolved.resource_name}' not found in repository"))
+        return
 
-        if resource_type == ResourceType.SKILL:
-            # Skills are directories with SKILL.md
-            if source_path.is_dir() and (source_path / "SKILL.md").exists():
-                dest_path = dest_base / subdir / resolved.username / resource_name
-                if _install_skill(source_path, dest_path, force):
-                    if dest_path.exists():
-                        result.updated.append(f"{subdir}/{resolved.username}/{resource_name}")
-                    else:
-                        result.installed.append(f"{subdir}/{resolved.username}/{resource_name}")
-                else:
-                    result.skipped.append(f"{subdir}/{resolved.username}/{resource_name}")
-                return
+    # If user specified a type, use only that
+    if specified_type:
+        target_type = ResourceType(specified_type)
+        if target_type not in found_types:
+            available_types = ", ".join(t.value for t in found_types.keys())
+            result.failed.append((
+                resolved.ref,
+                f"Resource '{resource_name}' not found as {specified_type}. "
+                f"Available types: {available_types}"
+            ))
+            return
+
+        # Install the specified type
+        source_path = found_types[target_type]
+        _install_single_type(
+            target_type, source_path, dest_base, resolved, resource_name, force, result
+        )
+        return
+
+    # Check for ambiguity
+    if len(found_types) > 1:
+        types_list = ", ".join(t.value for t in found_types.keys())
+        result.failed.append((
+            resolved.ref,
+            f"Multiple resources named '{resource_name}' found: {types_list}. "
+            f"Please specify the type with: agr add {resolved.ref} --type <skill|command|agent>"
+        ))
+        return
+
+    # Single type found - install it
+    resource_type, source_path = list(found_types.items())[0]
+    _install_single_type(
+        resource_type, source_path, dest_base, resolved, resource_name, force, result
+    )
+
+
+def _install_single_type(
+    resource_type: ResourceType,
+    source_path: Path,
+    dest_base: Path,
+    resolved: ResolvedRef,
+    resource_name: str,
+    force: bool,
+    result: SyncResult,
+) -> None:
+    """Install a single resource type."""
+    subdir = resource_type.value + "s"  # skill -> skills, command -> commands, agent -> agents
+
+    if resource_type == ResourceType.SKILL:
+        dest_path = dest_base / subdir / resolved.username / resource_name
+        existed = dest_path.exists()
+        if _install_skill(source_path, dest_path, force):
+            if existed:
+                result.updated.append(f"{subdir}/{resolved.username}/{resource_name}")
+            else:
+                result.installed.append(f"{subdir}/{resolved.username}/{resource_name}")
         else:
-            # Commands and agents are .md files
-            if source_path.is_file():
-                dest_path = dest_base / subdir / resolved.username / f"{resource_name}.md"
-                if _install_file(source_path, dest_path, force):
-                    if dest_path.exists():
-                        result.updated.append(f"{subdir}/{resolved.username}/{resource_name}")
-                    else:
-                        result.installed.append(f"{subdir}/{resolved.username}/{resource_name}")
-                else:
-                    result.skipped.append(f"{subdir}/{resolved.username}/{resource_name}")
-                return
-
-    # Resource not found
-    result.failed.append((resolved.ref, f"Resource '{resolved.resource_name}' not found in repository"))
+            result.skipped.append(f"{subdir}/{resolved.username}/{resource_name}")
+    else:
+        dest_path = dest_base / subdir / resolved.username / f"{resource_name}.md"
+        existed = dest_path.exists()
+        if _install_file(source_path, dest_path, force):
+            if existed:
+                result.updated.append(f"{subdir}/{resolved.username}/{resource_name}")
+            else:
+                result.installed.append(f"{subdir}/{resolved.username}/{resource_name}")
+        else:
+            result.skipped.append(f"{subdir}/{resolved.username}/{resource_name}")
 
 
 def _sync_package_from_repo(
@@ -294,7 +378,7 @@ def sync_dependencies(
             result.failed.append((ref, str(e)))
             continue
 
-        dep_result = sync_dependency(resolved, dest_base, force)
+        dep_result = sync_dependency(resolved, dest_base, force, specified_type=dep.type)
         result.merge(dep_result)
 
     return result

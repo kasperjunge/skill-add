@@ -37,6 +37,14 @@ def add_dependency(
             help="Mark this dependency as a package (installs all resources).",
         ),
     ] = False,
+    resource_type: Annotated[
+        Optional[str],
+        typer.Option(
+            "--type",
+            "-t",
+            help="Resource type: skill, command, or agent (for disambiguation).",
+        ),
+    ] = None,
     to_package: Annotated[
         Optional[str],
         typer.Option(
@@ -82,6 +90,7 @@ def add_dependency(
       agr add commit                    # Add from official index
       agr add kasperjunge/hello-world   # Add from user's agent-resources
       agr add kasperjunge/commit --package  # Add as a package
+      agr add kasperjunge/hello-world --type skill  # Disambiguate resource type
       agr add ./my-skill --to my-toolkit    # Add local path to package
       agr add kasperjunge/hello-world --direct  # Install directly (legacy)
     """
@@ -100,6 +109,7 @@ def add_dependency(
         console.print()
         console.print("Options:")
         console.print("  --package, -p           - Mark as package (multiple resources)")
+        console.print("  --type, -t <type>       - Resource type: skill, command, or agent")
         console.print("  --to <package>          - Add local path to a package definition")
         console.print("  --direct, -d            - Install directly without agr.toml")
         raise typer.Exit(0)
@@ -115,12 +125,27 @@ def add_dependency(
         return
 
     # Default: add to agr.toml
-    _add_to_config(ref, package)
+    _add_to_config(ref, package, resource_type)
 
 
-def _add_to_config(ref: str, is_package: bool) -> None:
+VALID_TYPES = ("skill", "command", "agent")
+
+
+def _add_to_config(ref: str, is_package: bool, resource_type: str | None = None) -> None:
     """Add a dependency to agr.toml."""
     try:
+        # Validate resource type if provided
+        if resource_type and resource_type not in VALID_TYPES:
+            console.print(f"[red]Invalid type: {resource_type}[/red]")
+            console.print(f"Valid types: {', '.join(VALID_TYPES)}")
+            raise typer.Exit(1)
+
+        # Type is not compatible with package
+        if resource_type and is_package:
+            console.print("[red]Cannot use --type with --package[/red]")
+            console.print("[dim]Packages install all resource types from a directory[/dim]")
+            raise typer.Exit(1)
+
         # Validate the reference format
         resolved = resolve_ref(ref, is_package)
 
@@ -133,11 +158,12 @@ def _add_to_config(ref: str, is_package: bool) -> None:
             return
 
         # Add to config
-        config.add_dependency(ref, package=is_package)
+        config.add_dependency(ref, package=is_package, resource_type=resource_type)
         config.save()
 
         pkg_str = " (package)" if is_package else ""
-        console.print(f"[green]Added '{ref}'{pkg_str} to {CONFIG_FILENAME}[/green]")
+        type_str = f" (type={resource_type})" if resource_type else ""
+        console.print(f"[green]Added '{ref}'{pkg_str}{type_str} to {CONFIG_FILENAME}[/green]")
         console.print(f"[dim]Run 'agr sync' to install dependencies[/dim]")
 
     except ValueError as e:

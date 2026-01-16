@@ -20,10 +20,12 @@ class Dependency:
         "kasper/commit" = {}
         "alice/data-toolkit" = { package = true }
         "commit" = {}  # From official index
+        "bob/ambiguous" = { type = "skill" }  # Disambiguate when multiple types exist
     """
 
     ref: str
     package: bool = False
+    type: str | None = None  # "skill", "command", or "agent"
 
     @classmethod
     def from_dict(cls, ref: str, data: dict[str, Any]) -> "Dependency":
@@ -31,6 +33,7 @@ class Dependency:
         return cls(
             ref=ref,
             package=data.get("package", False),
+            type=data.get("type"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -38,6 +41,8 @@ class Dependency:
         result: dict[str, Any] = {}
         if self.package:
             result["package"] = True
+        if self.type:
+            result["type"] = self.type
         return result
 
 
@@ -226,14 +231,17 @@ class AgrConfig:
 
         return data
 
-    def add_dependency(self, ref: str, package: bool = False) -> None:
+    def add_dependency(
+        self, ref: str, package: bool = False, resource_type: str | None = None
+    ) -> None:
         """Add a dependency to the config.
 
         Args:
             ref: Reference string (e.g., "kasper/commit", "commit")
             package: Whether this is a package dependency
+            resource_type: Optional type hint ("skill", "command", or "agent")
         """
-        self.dependencies[ref] = Dependency(ref=ref, package=package)
+        self.dependencies[ref] = Dependency(ref=ref, package=package, type=resource_type)
 
     def remove_dependency(self, ref: str) -> bool:
         """Remove a dependency from the config.
