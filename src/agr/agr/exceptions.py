@@ -19,3 +19,19 @@ class ResourceExistsError(AgrError):
 
 class BundleNotFoundError(AgrError):
     """Raised when no bundle directory exists in any resource type."""
+
+
+class ConfigNotFoundError(AgrError):
+    """Raised when agr.toml is not found."""
+
+
+class ConfigParseError(AgrError):
+    """Raised when agr.toml cannot be parsed."""
+
+
+class ConfigValidationError(AgrError):
+    """Raised when agr.toml contains invalid configuration."""
+
+
+class TypeDetectionError(AgrError):
+    """Raised when resource type cannot be detected from path."""

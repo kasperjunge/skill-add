@@ -1,7 +1,9 @@
 """Shared CLI utilities for agr commands."""
 
 import random
+import re
 import shutil
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -10,9 +12,11 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
+from agr.config import CONFIG_FILENAME, AgrConfig, find_config, load_or_create_config
 from agr.exceptions import (
     AgrError,
     BundleNotFoundError,
+    ConfigNotFoundError,
     RepoNotFoundError,
     ResourceExistsError,
     ResourceNotFoundError,
@@ -30,6 +34,112 @@ console = Console()
 
 # Default repository name when not specified
 DEFAULT_REPO_NAME = "agent-resources"
+
+
+def find_agr_toml(start_path: Path | None = None) -> Path | None:
+    """Find agr.toml by walking up the directory tree.
+
+    Args:
+        start_path: Starting directory (defaults to cwd)
+
+    Returns:
+        Path to agr.toml if found, None otherwise
+    """
+    return find_config(start_path)
+
+
+def get_or_create_config(start_path: Path | None = None) -> AgrConfig:
+    """Get existing config or create a new one.
+
+    Args:
+        start_path: Starting directory (defaults to cwd)
+
+    Returns:
+        AgrConfig instance
+    """
+    return load_or_create_config(start_path)
+
+
+def get_author_from_git(repo_path: Path | None = None) -> str | None:
+    """Extract author username from git remote origin URL.
+
+    Parses the origin remote URL to extract the GitHub username.
+    Supports both HTTPS and SSH URL formats.
+
+    Args:
+        repo_path: Path to git repository (defaults to cwd)
+
+    Returns:
+        GitHub username if found, None otherwise
+
+    Examples:
+        "https://github.com/kasperjunge/agent-resources.git" -> "kasperjunge"
+        "git@github.com:kasperjunge/agent-resources.git" -> "kasperjunge"
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+
+        url = result.stdout.strip()
+        return parse_github_username_from_url(url)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+def parse_github_username_from_url(url: str) -> str | None:
+    """Parse GitHub username from a remote URL.
+
+    Args:
+        url: Git remote URL (HTTPS or SSH format)
+
+    Returns:
+        GitHub username if parseable, None otherwise
+    """
+    # HTTPS format: https://github.com/username/repo.git
+    https_match = re.match(r"https://github\.com/([^/]+)/", url)
+    if https_match:
+        return https_match.group(1)
+
+    # SSH format: git@github.com:username/repo.git
+    ssh_match = re.match(r"git@github\.com:([^/]+)/", url)
+    if ssh_match:
+        return ssh_match.group(1)
+
+    return None
+
+
+def build_namespaced_path(
+    base_path: Path,
+    resource_type: str,
+    username: str,
+    package_name: str | None = None,
+    resource_name: str | None = None,
+) -> Path:
+    """Build a namespaced install path for a resource.
+
+    Args:
+        base_path: Base .claude directory path
+        resource_type: "skills", "commands", or "agents"
+        username: Author username (namespace)
+        package_name: Package name if part of a package
+        resource_name: Name of the resource
+
+    Returns:
+        Full Path for the resource
+    """
+    path = base_path / resource_type / username
+    if package_name:
+        path = path / package_name
+    if resource_name:
+        path = path / resource_name
+    return path
 
 
 def parse_nested_name(name: str) -> tuple[str, list[str]]:

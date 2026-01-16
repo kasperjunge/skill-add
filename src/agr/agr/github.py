@@ -93,3 +93,49 @@ def repo_exists(repo_name: str = "agent-resources") -> bool:
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+
+
+def get_author_from_remote(repo_path: Path | None = None) -> str | None:
+    """Get the author (username) from the git remote origin URL.
+
+    Parses the origin remote URL to extract the GitHub username.
+    Supports both HTTPS and SSH URL formats.
+
+    Args:
+        repo_path: Path to the git repository (defaults to current directory)
+
+    Returns:
+        GitHub username if found, None otherwise
+
+    Examples:
+        For "https://github.com/kasperjunge/agent-resources.git" returns "kasperjunge"
+        For "git@github.com:kasperjunge/agent-resources.git" returns "kasperjunge"
+    """
+    import re
+
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+
+        url = result.stdout.strip()
+
+        # HTTPS format: https://github.com/username/repo.git
+        https_match = re.match(r"https://github\.com/([^/]+)/", url)
+        if https_match:
+            return https_match.group(1)
+
+        # SSH format: git@github.com:username/repo.git
+        ssh_match = re.match(r"git@github\.com:([^/]+)/", url)
+        if ssh_match:
+            return ssh_match.group(1)
+
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None

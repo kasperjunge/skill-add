@@ -4,7 +4,11 @@ import typer
 
 from agr.cli.add import app as add_app
 from agr.cli.init import app as init_app
+from agr.cli.new import app as new_app
 from agr.cli.remove import app as remove_app
+from agr.cli.show import app as show_app
+from agr.cli.status import app as status_app
+from agr.cli.sync import app as sync_app
 from agr.cli.update import app as update_app
 
 app = typer.Typer(
@@ -17,7 +21,11 @@ app = typer.Typer(
 # Register subcommands
 app.add_typer(add_app, name="add")
 app.add_typer(init_app, name="init")
+app.add_typer(new_app, name="new")
 app.add_typer(remove_app, name="remove")
+app.add_typer(show_app, name="show")
+app.add_typer(status_app, name="status")
+app.add_typer(sync_app, name="sync")
 app.add_typer(update_app, name="update")
 
 
