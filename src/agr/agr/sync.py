@@ -32,6 +32,14 @@ class SyncResult:
     def has_errors(self) -> bool:
         return len(self.failed) > 0
 
+    def merge(self, other: "SyncResult") -> None:
+        """Merge another SyncResult into this one."""
+        self.installed.extend(other.installed)
+        self.updated.extend(other.updated)
+        self.skipped.extend(other.skipped)
+        self.failed.extend(other.failed)
+        self.removed.extend(other.removed)
+
 
 def compute_file_hash(path: Path) -> str:
     """Compute SHA256 hash of a file or directory.
@@ -287,12 +295,7 @@ def sync_dependencies(
             continue
 
         dep_result = sync_dependency(resolved, dest_base, force)
-
-        # Merge results
-        result.installed.extend(dep_result.installed)
-        result.updated.extend(dep_result.updated)
-        result.skipped.extend(dep_result.skipped)
-        result.failed.extend(dep_result.failed)
+        result.merge(dep_result)
 
     return result
 
@@ -321,9 +324,9 @@ def sync_authored_package(
     # Discover resources using patterns or defaults
     resources = discover_package_resources(
         package_path,
-        skill_patterns=package.skills if package.skills else None,
-        command_patterns=package.commands if package.commands else None,
-        agent_patterns=package.agents if package.agents else None,
+        skill_patterns=package.skills or None,
+        command_patterns=package.commands or None,
+        agent_patterns=package.agents or None,
     )
 
     # Install skills
@@ -393,11 +396,7 @@ def sync_authored_packages(
             author,
             force,
         )
-
-        result.installed.extend(pkg_result.installed)
-        result.updated.extend(pkg_result.updated)
-        result.skipped.extend(pkg_result.skipped)
-        result.failed.extend(pkg_result.failed)
+        result.merge(pkg_result)
 
     return result
 

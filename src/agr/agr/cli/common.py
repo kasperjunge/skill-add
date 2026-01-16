@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
-from agr.config import CONFIG_FILENAME, AgrConfig, find_config, load_or_create_config
+from agr.config import CONFIG_FILENAME, AgrConfig, find_config as find_agr_toml, load_or_create_config as get_or_create_config
 from agr.exceptions import (
     AgrError,
     BundleNotFoundError,
@@ -34,30 +34,6 @@ console = Console()
 
 # Default repository name when not specified
 DEFAULT_REPO_NAME = "agent-resources"
-
-
-def find_agr_toml(start_path: Path | None = None) -> Path | None:
-    """Find agr.toml by walking up the directory tree.
-
-    Args:
-        start_path: Starting directory (defaults to cwd)
-
-    Returns:
-        Path to agr.toml if found, None otherwise
-    """
-    return find_config(start_path)
-
-
-def get_or_create_config(start_path: Path | None = None) -> AgrConfig:
-    """Get existing config or create a new one.
-
-    Args:
-        start_path: Starting directory (defaults to cwd)
-
-    Returns:
-        AgrConfig instance
-    """
-    return load_or_create_config(start_path)
 
 
 def get_author_from_git(repo_path: Path | None = None) -> str | None:
@@ -324,9 +300,8 @@ def get_local_resource_path(
 
     if resource_subdir == "skills":
         return dest / name
-    else:
-        # commands and agents are .md files
-        return dest / f"{name}.md"
+    # Commands and agents are .md files
+    return dest / f"{name}.md"
 
 
 def handle_update_resource(

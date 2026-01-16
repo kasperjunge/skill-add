@@ -13,6 +13,11 @@ class ResourceType(Enum):
     AGENT = "agent"
 
 
+def _path_contains_segment(path_str: str, segment: str) -> bool:
+    """Check if a path contains a specific directory segment."""
+    return f"/{segment}/" in path_str or path_str.startswith(f"{segment}/")
+
+
 def detect_resource_type(path: Path) -> ResourceType | None:
     """Detect resource type from path based on parent directory naming.
 
@@ -33,25 +38,20 @@ def detect_resource_type(path: Path) -> ResourceType | None:
         ResourceType.COMMAND
     """
     path_str = str(path)
+    is_planning_path = not path.exists() and not path.suffix
 
-    if "/skills/" in path_str or path_str.startswith("skills/"):
-        # Skills must be directories with SKILL.md
+    if _path_contains_segment(path_str, "skills"):
         if path.is_dir() and (path / "SKILL.md").exists():
             return ResourceType.SKILL
-        # Allow detection for non-existent paths during planning
-        if not path.exists() and not path.suffix:
+        if is_planning_path:
             return ResourceType.SKILL
-    elif "/commands/" in path_str or path_str.startswith("commands/"):
-        # Commands must be .md files
-        if path.suffix == ".md":
+
+    elif _path_contains_segment(path_str, "commands"):
+        if path.suffix == ".md" or is_planning_path:
             return ResourceType.COMMAND
-        if not path.exists() and not path.suffix:
-            return ResourceType.COMMAND
-    elif "/agents/" in path_str or path_str.startswith("agents/"):
-        # Agents must be .md files
-        if path.suffix == ".md":
-            return ResourceType.AGENT
-        if not path.exists() and not path.suffix:
+
+    elif _path_contains_segment(path_str, "agents"):
+        if path.suffix == ".md" or is_planning_path:
             return ResourceType.AGENT
 
     return None

@@ -58,10 +58,9 @@ class ResolvedRef:
         """Get a display-friendly reference string."""
         if self.ref_type == RefType.OFFICIAL:
             return self.resource_name
-        elif self.ref_type == RefType.USER_DEFAULT:
+        if self.ref_type == RefType.USER_DEFAULT:
             return f"{self.username}/{self.resource_name}"
-        else:
-            return f"{self.username}/{self.repo}/{self.resource_name}"
+        return f"{self.username}/{self.repo}/{self.resource_name}"
 
 
 def _parse_nested_name(name: str) -> tuple[str, list[str]]:
@@ -153,7 +152,8 @@ def resolve_ref(ref: str, is_package: bool = False) -> ResolvedRef:
     if len(parts) == 1:
         # Single name -> official index
         name = parts[0]
-        base_name, path_segments = _parse_nested_name(name)
+        _, path_segments = _parse_nested_name(name)
+        base_name = path_segments[-1]
 
         # Look up in official index
         entry = _lookup_in_official_index(base_name)
@@ -180,7 +180,7 @@ def resolve_ref(ref: str, is_package: bool = False) -> ResolvedRef:
         if not username or not name:
             raise ValueError(f"Invalid reference format: '{ref}'")
 
-        base_name, path_segments = _parse_nested_name(name)
+        _, path_segments = _parse_nested_name(name)
 
         return ResolvedRef(
             ref=ref,
@@ -198,7 +198,7 @@ def resolve_ref(ref: str, is_package: bool = False) -> ResolvedRef:
         if not username or not repo or not name:
             raise ValueError(f"Invalid reference format: '{ref}'")
 
-        base_name, path_segments = _parse_nested_name(name)
+        _, path_segments = _parse_nested_name(name)
 
         return ResolvedRef(
             ref=ref,

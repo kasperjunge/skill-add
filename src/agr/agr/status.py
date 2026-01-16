@@ -133,30 +133,23 @@ def get_status(
     for rel_path, source_ref in expected_resources.items():
         full_path = dest_base / rel_path
 
-        # Adjust path for files that need extension
-        if not full_path.exists():
-            # Try with .md extension for commands/agents
-            if full_path.suffix != ".md" and not full_path.is_dir():
-                md_path = full_path.parent / f"{full_path.name}.md"
-                if md_path.exists():
-                    full_path = md_path
+        # Try with .md extension for commands/agents if path doesn't exist
+        if not full_path.exists() and full_path.suffix != ".md":
+            md_path = full_path.parent / f"{full_path.name}.md"
+            if md_path.exists():
+                full_path = md_path
 
-        if not full_path.exists() and not (dest_base / rel_path).exists():
-            # Check if it's a directory path
-            dir_path = dest_base / rel_path
-            if not dir_path.exists():
-                report.missing.append(ResourceStatus(
-                    path=rel_path,
-                    source_ref=source_ref,
-                    state="missing",
-                ))
-        else:
-            # Resource exists - mark as synced
-            # (We could add hash comparison here for "modified" detection)
+        if full_path.exists():
             report.synced.append(ResourceStatus(
                 path=rel_path,
                 source_ref=source_ref,
                 state="synced",
+            ))
+        else:
+            report.missing.append(ResourceStatus(
+                path=rel_path,
+                source_ref=source_ref,
+                state="missing",
             ))
 
     # Find untracked resources
