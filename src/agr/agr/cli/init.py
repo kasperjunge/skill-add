@@ -22,8 +22,74 @@ console = Console()
 
 app = typer.Typer(
     help="Create new agent resources or repositories.",
-    no_args_is_help=True,
+    invoke_without_command=True,
 )
+
+
+def _create_convention_structure(base_path: Path) -> list[Path]:
+    """Create the convention directory structure for local authoring.
+
+    Creates:
+    - skills/
+    - commands/
+    - agents/
+    - packages/
+
+    Args:
+        base_path: Directory to create structure in
+
+    Returns:
+        List of created directories
+    """
+    dirs = [
+        base_path / "skills",
+        base_path / "commands",
+        base_path / "agents",
+        base_path / "packages",
+    ]
+    created = []
+    for d in dirs:
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
+            created.append(d)
+    return created
+
+
+@app.callback()
+def init_callback(
+    ctx: typer.Context,
+) -> None:
+    """Create convention directory structure for local resource authoring.
+
+    When called without a subcommand, creates the skills/, commands/, agents/,
+    and packages/ directories for local resource authoring.
+
+    With subcommands:
+      agr init skill <name>    Create a new skill scaffold
+      agr init command <name>  Create a new command scaffold
+      agr init agent <name>    Create a new agent scaffold
+      agr init package <name>  Create a new package scaffold
+      agr init repo [name]     Create a full agent-resources repository
+    """
+    # Only run if no subcommand was invoked
+    if ctx.invoked_subcommand is None:
+        base_path = Path.cwd()
+
+        created = _create_convention_structure(base_path)
+
+        if created:
+            console.print("[green]Created authoring directories:[/green]")
+            for d in created:
+                console.print(f"  {d.relative_to(base_path)}/")
+            console.print("\nNext steps:")
+            console.print("  agr init skill <name>    # Create a new skill")
+            console.print("  agr init command <name>  # Create a new command")
+            console.print("  agr init agent <name>    # Create a new agent")
+            console.print("  agr init package <name>  # Create a new package")
+            console.print("\nAfter creating resources, run:")
+            console.print("  agr sync                 # Sync to .claude/")
+        else:
+            console.print("[dim]Authoring directories already exist.[/dim]")
 
 
 @app.command("repo")
@@ -140,17 +206,34 @@ def init_skill(
         typer.Option(
             "--path",
             "-p",
-            help="Custom path (default: ./.claude/skills/<name>/)",
+            help="Custom path (default: ./skills/<name>/)",
         ),
     ] = None,
+    legacy: Annotated[
+        bool,
+        typer.Option(
+            "--legacy",
+            help="Create in .claude/skills/ instead of skills/ (old behavior)",
+        ),
+    ] = False,
 ) -> None:
-    """Create a new skill scaffold.
+    """Create a new skill scaffold in authoring path.
+
+    By default, creates skills in ./skills/ for local authoring.
+    Use --legacy to create in ./.claude/skills/ (old behavior).
 
     Examples:
-      agr init skill my-skill
+      agr init skill my-skill              # Creates ./skills/my-skill/SKILL.md
+      agr init skill my-skill --legacy     # Creates ./.claude/skills/my-skill/SKILL.md
       agr init skill code-reviewer --path ./custom/path/
     """
-    target_path = path or (Path.cwd() / ".claude" / "skills" / name)
+    if path:
+        target_path = path
+    elif legacy:
+        target_path = Path.cwd() / ".claude" / "skills" / name
+    else:
+        target_path = Path.cwd() / "skills" / name
+
     skill_file = target_path / "SKILL.md"
 
     if skill_file.exists():
@@ -180,6 +263,9 @@ Provide specific instructions for Claude to follow.
     skill_file.write_text(skill_content)
     console.print(f"[green]Created skill at {skill_file}[/green]")
 
+    if not legacy and not path:
+        console.print("[dim]Run 'agr sync' to install to .claude/[/dim]")
+
 
 @app.command("command")
 def init_command(
@@ -195,17 +281,34 @@ def init_command(
         typer.Option(
             "--path",
             "-p",
-            help="Custom path (default: ./.claude/commands/<name>.md)",
+            help="Custom path (default: ./commands/<name>.md)",
         ),
     ] = None,
+    legacy: Annotated[
+        bool,
+        typer.Option(
+            "--legacy",
+            help="Create in .claude/commands/ instead of commands/ (old behavior)",
+        ),
+    ] = False,
 ) -> None:
-    """Create a new slash command scaffold.
+    """Create a new slash command scaffold in authoring path.
+
+    By default, creates commands in ./commands/ for local authoring.
+    Use --legacy to create in ./.claude/commands/ (old behavior).
 
     Examples:
-      agr init command my-command
+      agr init command my-command           # Creates ./commands/my-command.md
+      agr init command my-command --legacy  # Creates ./.claude/commands/my-command.md
       agr init command deploy --path ./custom/path/
     """
-    target_path = path or (Path.cwd() / ".claude" / "commands")
+    if path:
+        target_path = path
+    elif legacy:
+        target_path = Path.cwd() / ".claude" / "commands"
+    else:
+        target_path = Path.cwd() / "commands"
+
     command_file = target_path / f"{name}.md"
 
     if command_file.exists():
@@ -230,6 +333,9 @@ Provide clear, actionable instructions for what Claude should do.
     command_file.write_text(command_content)
     console.print(f"[green]Created command at {command_file}[/green]")
 
+    if not legacy and not path:
+        console.print("[dim]Run 'agr sync' to install to .claude/[/dim]")
+
 
 @app.command("agent")
 def init_agent(
@@ -245,17 +351,34 @@ def init_agent(
         typer.Option(
             "--path",
             "-p",
-            help="Custom path (default: ./.claude/agents/<name>.md)",
+            help="Custom path (default: ./agents/<name>.md)",
         ),
     ] = None,
+    legacy: Annotated[
+        bool,
+        typer.Option(
+            "--legacy",
+            help="Create in .claude/agents/ instead of agents/ (old behavior)",
+        ),
+    ] = False,
 ) -> None:
-    """Create a new sub-agent scaffold.
+    """Create a new sub-agent scaffold in authoring path.
+
+    By default, creates agents in ./agents/ for local authoring.
+    Use --legacy to create in ./.claude/agents/ (old behavior).
 
     Examples:
-      agr init agent my-agent
+      agr init agent my-agent           # Creates ./agents/my-agent.md
+      agr init agent my-agent --legacy  # Creates ./.claude/agents/my-agent.md
       agr init agent test-writer --path ./custom/path/
     """
-    target_path = path or (Path.cwd() / ".claude" / "agents")
+    if path:
+        target_path = path
+    elif legacy:
+        target_path = Path.cwd() / ".claude" / "agents"
+    else:
+        target_path = Path.cwd() / "agents"
+
     agent_file = target_path / f"{name}.md"
 
     if agent_file.exists():
@@ -290,3 +413,56 @@ When invoked, you should:
 """
     agent_file.write_text(agent_content)
     console.print(f"[green]Created agent at {agent_file}[/green]")
+
+    if not legacy and not path:
+        console.print("[dim]Run 'agr sync' to install to .claude/[/dim]")
+
+
+@app.command("package")
+def init_package(
+    name: Annotated[
+        str,
+        typer.Argument(
+            help="Name of the package to create",
+            metavar="NAME",
+        ),
+    ],
+    path: Annotated[
+        Path | None,
+        typer.Option(
+            "--path",
+            "-p",
+            help="Custom path (default: ./packages/<name>/)",
+        ),
+    ] = None,
+) -> None:
+    """Create a new package scaffold with skills/, commands/, agents/ subdirs.
+
+    Packages group related resources together under a single namespace.
+
+    Examples:
+      agr init package my-toolkit           # Creates ./packages/my-toolkit/
+      agr init package utils --path ./libs/
+    """
+    target_path = path or (Path.cwd() / "packages" / name)
+
+    if target_path.exists():
+        console.print(f"[red]Error: Package directory already exists at {target_path}[/red]")
+        raise typer.Exit(1)
+
+    # Create package structure
+    target_path.mkdir(parents=True, exist_ok=True)
+    (target_path / "skills").mkdir()
+    (target_path / "commands").mkdir()
+    (target_path / "agents").mkdir()
+
+    console.print(f"[green]Created package at {target_path}/[/green]")
+    console.print(f"  {target_path}/skills/")
+    console.print(f"  {target_path}/commands/")
+    console.print(f"  {target_path}/agents/")
+    console.print("\nNext steps:")
+    console.print(f"  agr init skill <name> --path {target_path}/skills/<name>")
+    console.print(f"  agr init command <name> --path {target_path}/commands/")
+    console.print(f"  agr init agent <name> --path {target_path}/agents/")
+    console.print("\nAfter creating resources, run:")
+    console.print("  agr sync                 # Sync to .claude/")

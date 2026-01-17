@@ -16,15 +16,28 @@ runner = CliRunner()
 class TestSyncCommand:
     """Tests for agr sync command."""
 
-    def test_sync_errors_without_agr_toml(self, tmp_path: Path, monkeypatch):
-        """Test that sync errors when no agr.toml exists."""
+    def test_sync_without_agr_toml_shows_message(self, tmp_path: Path, monkeypatch):
+        """Test that sync works without agr.toml but shows message."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".git").mkdir()
 
         result = runner.invoke(app, ["sync"])
 
-        assert result.exit_code == 1
-        assert "agr.toml" in result.output.lower() or "not found" in result.output.lower()
+        # Now sync succeeds even without agr.toml (can sync local resources)
+        assert result.exit_code == 0
+        # Should show message about no agr.toml or nothing to sync
+        assert "nothing to sync" in result.output.lower() or "skipping remote" in result.output.lower()
+
+    def test_sync_remote_only_errors_without_agr_toml(self, tmp_path: Path, monkeypatch):
+        """Test that sync --remote errors when no agr.toml exists."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        result = runner.invoke(app, ["sync", "--remote"])
+
+        # With --remote flag, no agr.toml is not an error, just a message
+        assert result.exit_code == 0
+        assert "nothing to sync" in result.output.lower() or "skipping remote" in result.output.lower()
 
     @patch("agr.cli.sync.fetch_resource")
     def test_sync_installs_missing_dependencies(

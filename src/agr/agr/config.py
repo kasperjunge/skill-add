@@ -18,18 +18,37 @@ class DependencySpec:
 
 
 @dataclass
+class LocalResourceSpec:
+    """Specification for a local resource outside convention paths.
+
+    Used for the [local] section in agr.toml:
+
+    [local]
+    "custom-skill" = { path = "./my-resources/custom-skill", type = "skill" }
+    """
+
+    path: str
+    type: str | None = None  # "skill", "command", "agent"
+    package: str | None = None  # Optional package to include in
+
+
+@dataclass
 class AgrConfig:
     """
     Configuration loaded from agr.toml.
 
-    The config file tracks dependencies with fully qualified references:
+    The config file tracks dependencies and local resources:
 
     [dependencies]
     "kasperjunge/commit" = {}
     "alice/review" = { type = "skill" }
+
+    [local]
+    "custom-skill" = { path = "./my-resources/custom-skill", type = "skill" }
     """
 
     dependencies: dict[str, DependencySpec] = field(default_factory=dict)
+    local: dict[str, LocalResourceSpec] = field(default_factory=dict)
     _document: TOMLDocument | None = field(default=None, repr=False)
     _path: Path | None = field(default=None, repr=False)
 
@@ -72,6 +91,16 @@ class AgrConfig:
             else:
                 config.dependencies[ref] = DependencySpec()
 
+        # Parse local section
+        local_section = doc.get("local", {})
+        for name, spec in local_section.items():
+            if isinstance(spec, dict) and "path" in spec:
+                config.local[name] = LocalResourceSpec(
+                    path=spec["path"],
+                    type=spec.get("type"),
+                    package=spec.get("package"),
+                )
+
         return config
 
     def save(self, path: Path | None = None) -> None:
@@ -110,6 +139,27 @@ class AgrConfig:
             else:
                 deps_table[ref] = {}
 
+        # Update local section if we have local resources
+        if self.local:
+            if "local" not in doc:
+                doc["local"] = tomlkit.table()
+
+            local_table = doc["local"]
+
+            # Clear existing local entries
+            existing_keys = list(local_table.keys())
+            for key in existing_keys:
+                del local_table[key]
+
+            # Add current local resources
+            for name, spec in self.local.items():
+                entry = {"path": spec.path}
+                if spec.type:
+                    entry["type"] = spec.type
+                if spec.package:
+                    entry["package"] = spec.package
+                local_table[name] = entry
+
         save_path.write_text(tomlkit.dumps(doc))
         self._document = doc
         self._path = save_path
@@ -132,6 +182,25 @@ class AgrConfig:
             ref: Dependency reference to remove
         """
         self.dependencies.pop(ref, None)
+
+    def add_local(self, name: str, spec: LocalResourceSpec) -> None:
+        """
+        Add or update a local resource.
+
+        Args:
+            name: Local resource name
+            spec: Local resource specification
+        """
+        self.local[name] = spec
+
+    def remove_local(self, name: str) -> None:
+        """
+        Remove a local resource.
+
+        Args:
+            name: Local resource name to remove
+        """
+        self.local.pop(name, None)
 
 
 def find_config(start_path: Path | None = None) -> Path | None:

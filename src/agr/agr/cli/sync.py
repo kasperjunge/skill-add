@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 
 from agr.config import AgrConfig, find_config
+from agr.discovery import discover_local_resources
 from agr.exceptions import (
     AgrError,
     RepoNotFoundError,
@@ -17,6 +18,8 @@ from agr.fetcher import (
     ResourceType,
     fetch_resource,
 )
+from agr.github import get_username_from_git_remote
+from agr.local_sync import sync_local_resources
 from agr.cli.common import (
     DEFAULT_REPO_NAME,
     fetch_spinner,
@@ -148,6 +151,73 @@ def _remove_namespaced_resource(
         _cleanup_empty_parent(agent_path)
 
 
+def _find_repo_root() -> Path | None:
+    """Find the repository root by looking for .git directory."""
+    current = Path.cwd()
+    while True:
+        if (current / ".git").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def _sync_local_authoring_resources(
+    base_path: Path,
+    prune: bool,
+) -> tuple[int, int, int, int]:
+    """
+    Sync local authoring resources to .claude directory.
+
+    Returns:
+        Tuple of (installed, updated, pruned, failed) counts
+    """
+    # Find repo root
+    repo_root = _find_repo_root()
+    if repo_root is None:
+        repo_root = Path.cwd()
+
+    # Get username from git remote
+    username = get_username_from_git_remote(repo_root)
+    if not username:
+        console.print("[yellow]Warning: Could not determine username from git remote.[/yellow]")
+        console.print("[yellow]Using 'local' as namespace. Configure git remote for proper namespacing.[/yellow]")
+        username = "local"
+
+    # Discover local resources
+    context = discover_local_resources(repo_root)
+
+    if context.is_empty:
+        return (0, 0, 0, 0)
+
+    # Sync to .claude
+    result = sync_local_resources(
+        context=context,
+        username=username,
+        base_path=base_path,
+        root_path=repo_root,
+        prune=prune,
+    )
+
+    # Print results
+    for name in result.installed:
+        console.print(f"[green]Installed local resource '{name}'[/green]")
+    for name in result.updated:
+        console.print(f"[blue]Updated local resource '{name}'[/blue]")
+    for name in result.removed:
+        console.print(f"[yellow]Pruned local resource '{name}'[/yellow]")
+    for name, error in result.errors:
+        console.print(f"[red]Failed to sync '{name}': {error}[/red]")
+
+    return (
+        len(result.installed),
+        len(result.updated),
+        len(result.removed),
+        len(result.errors),
+    )
+
+
 @app.command()
 def sync(
     global_install: bool = typer.Option(
@@ -158,24 +228,96 @@ def sync(
         False, "--prune",
         help="Remove resources not listed in agr.toml",
     ),
+    local_only: bool = typer.Option(
+        False, "--local",
+        help="Only sync local authoring resources (skills/, commands/, etc.)",
+    ),
+    remote_only: bool = typer.Option(
+        False, "--remote",
+        help="Only sync remote dependencies from agr.toml",
+    ),
 ) -> None:
     """
-    Synchronize installed resources with agr.toml.
+    Synchronize installed resources with agr.toml and local authoring paths.
 
-    Installs any missing dependencies and optionally removes
-    resources not listed in agr.toml.
+    By default, syncs both local resources (skills/, commands/, agents/, packages/)
+    and remote dependencies from agr.toml.
+
+    Use --local to only sync local authoring resources.
+    Use --remote to only sync remote dependencies.
     """
-    # Find agr.toml
-    config_path = find_config()
-    if not config_path:
-        console.print("[red]Error: No agr.toml found.[/red]")
-        console.print("Run 'agr add <ref>' to create one, or create it manually.")
-        raise typer.Exit(1)
-
-    config = AgrConfig.load(config_path)
     base_path = get_base_path(global_install)
 
-    # Track stats
+    # Track overall stats
+    total_installed = 0
+    total_updated = 0
+    total_pruned = 0
+    total_failed = 0
+
+    # Determine what to sync
+    sync_local = not remote_only
+    sync_remote = not local_only
+
+    # Sync local authoring resources first
+    if sync_local:
+        local_installed, local_updated, local_pruned, local_failed = _sync_local_authoring_resources(
+            base_path, prune
+        )
+        total_installed += local_installed
+        total_updated += local_updated
+        total_pruned += local_pruned
+        total_failed += local_failed
+
+    # Sync remote dependencies
+    if sync_remote:
+        # Find agr.toml
+        config_path = find_config()
+        if not config_path:
+            if local_only:
+                # If only syncing local, no config is fine
+                pass
+            else:
+                # Only warn if we expected to sync remote
+                console.print("[dim]No agr.toml found. Skipping remote dependencies.[/dim]")
+        else:
+            config = AgrConfig.load(config_path)
+            remote_installed, remote_skipped, remote_failed, remote_pruned = _sync_remote_dependencies(
+                config, base_path, prune
+            )
+            total_installed += remote_installed
+            total_pruned += remote_pruned
+            total_failed += remote_failed
+
+    # Print summary
+    if total_installed > 0 or total_updated > 0 or total_pruned > 0 or total_failed > 0:
+        parts = []
+        if total_installed > 0:
+            parts.append(f"{total_installed} installed")
+        if total_updated > 0:
+            parts.append(f"{total_updated} updated")
+        if total_pruned > 0:
+            parts.append(f"{total_pruned} pruned")
+        if total_failed > 0:
+            parts.append(f"[red]{total_failed} failed[/red]")
+        console.print(f"[dim]Sync complete: {', '.join(parts)}[/dim]")
+    else:
+        console.print("[dim]Nothing to sync.[/dim]")
+
+    if total_failed > 0:
+        raise typer.Exit(1)
+
+
+def _sync_remote_dependencies(
+    config: AgrConfig,
+    base_path: Path,
+    prune: bool,
+) -> tuple[int, int, int, int]:
+    """
+    Sync remote dependencies from agr.toml.
+
+    Returns:
+        Tuple of (installed, skipped, failed, pruned) counts
+    """
     installed_count = 0
     skipped_count = 0
     failed_count = 0
@@ -244,20 +386,4 @@ def sync(
                     console.print(f"[yellow]Pruned '{ref}'[/yellow]")
                     pruned_count += 1
 
-    # Print summary
-    if installed_count > 0 or skipped_count > 0 or pruned_count > 0:
-        parts = []
-        if installed_count > 0:
-            parts.append(f"{installed_count} installed")
-        if skipped_count > 0:
-            parts.append(f"{skipped_count} up-to-date")
-        if pruned_count > 0:
-            parts.append(f"{pruned_count} pruned")
-        if failed_count > 0:
-            parts.append(f"[red]{failed_count} failed[/red]")
-        console.print(f"[dim]Sync complete: {', '.join(parts)}[/dim]")
-    else:
-        console.print("[dim]Nothing to sync.[/dim]")
-
-    if failed_count > 0:
-        raise typer.Exit(1)
+    return (installed_count, skipped_count, failed_count, pruned_count)

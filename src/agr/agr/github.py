@@ -1,7 +1,53 @@
 """GitHub CLI integration for creating and pushing repositories."""
 
+import re
 import subprocess
 from pathlib import Path
+
+
+def get_username_from_git_remote(repo_path: Path | None = None) -> str | None:
+    """Extract username from git remote origin URL.
+
+    Parses both SSH and HTTPS style remotes:
+    - git@github.com:username/repo.git -> username
+    - https://github.com/username/repo.git -> username
+    - https://github.com/username/repo -> username
+
+    Args:
+        repo_path: Path to the git repository (defaults to current directory)
+
+    Returns:
+        The username/org from the remote, or None if not found
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+
+        remote_url = result.stdout.strip()
+        if not remote_url:
+            return None
+
+        # Try SSH format: git@github.com:username/repo.git
+        ssh_match = re.match(r"git@[^:]+:([^/]+)/", remote_url)
+        if ssh_match:
+            return ssh_match.group(1)
+
+        # Try HTTPS format: https://github.com/username/repo.git
+        https_match = re.match(r"https?://[^/]+/([^/]+)/", remote_url)
+        if https_match:
+            return https_match.group(1)
+
+        return None
+
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return None
 
 
 def check_gh_cli() -> bool:

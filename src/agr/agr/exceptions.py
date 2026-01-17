@@ -31,3 +31,15 @@ class ConfigNotFoundError(AgrError):
 
 class ConfigParseError(AgrError):
     """Raised when agr.toml contains invalid TOML syntax."""
+
+
+class NoGitRemoteError(AgrError):
+    """Raised when no git remote is found for namespace resolution."""
+
+
+class InvalidLocalPathError(AgrError):
+    """Raised when a local resource path is invalid or doesn't exist."""
+
+
+class ResourceTypeDetectionError(AgrError):
+    """Raised when resource type cannot be detected from path."""
