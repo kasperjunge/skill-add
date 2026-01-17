@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agr"
-version = "0.2.3"
+version = "0.3.0"
 description = "Agent Resources - Install and create Claude Code skills, commands, and agents"
 readme = "README.md"
 requires-python = ">=3.10"
