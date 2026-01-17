@@ -171,13 +171,26 @@ def _sync_local_dependency(
     }
     subdir = type_to_subdir.get(dep.type, "skills")
 
+    # Handle package explosion
+    if dep.type == "package":
+        name = source_path.name
+        try:
+            from agr.cli.add import _explode_package
+            is_update = any([
+                (base_path / "skills" / username / name).exists(),
+                (base_path / "commands" / username / name).exists(),
+                (base_path / "agents" / username / name).exists(),
+            ])
+            _explode_package(source_path, username, name, base_path)
+            if is_update:
+                return (None, name, None)
+            return (name, None, None)
+        except Exception as e:
+            return (None, None, (name, str(e)))
+
     # Build destination path
     if dep.type == "skill":
         # Skills are directories: .claude/skills/{username}/{name}/
-        name = source_path.name
-        dest_path = base_path / subdir / username / name
-    elif dep.type == "package":
-        # Packages are directories: .claude/packages/{username}/{name}/
         name = source_path.name
         dest_path = base_path / subdir / username / name
     else:

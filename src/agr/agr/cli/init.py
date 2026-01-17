@@ -6,8 +6,6 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from agr.github import check_gh_cli, create_github_repo, get_github_username, repo_exists
-from agr.scaffold import create_agent_resources_repo, init_git
 
 console = Console()
 
@@ -29,6 +27,26 @@ def _create_convention_structure(base_path: Path) -> list[Path]:
             dir_path.mkdir(parents=True, exist_ok=True)
             created.append(dir_path)
     return created
+
+
+def _extract_name_and_path(name: str, path: Path | None) -> tuple[str, Path | None]:
+    """Extract name and path when name contains path separators.
+
+    If name contains '/' and path is None, split the name to extract
+    the actual resource name and infer the path.
+
+    Examples:
+        'skills/my-skill' -> ('my-skill', Path('skills/my-skill'))
+        './skills/my-skill' -> ('my-skill', Path('./skills/my-skill'))
+        'my-skill' -> ('my-skill', None)
+
+    Returns:
+        Tuple of (extracted_name, inferred_path)
+    """
+    if "/" in name and path is None:
+        given_path = Path(name)
+        return given_path.name, given_path
+    return name, path
 
 
 def _get_resource_target_path(
@@ -62,132 +80,39 @@ def _get_resource_target_path(
     return base
 
 
-@app.callback()
-def init_callback(
-    ctx: typer.Context,
-) -> None:
-    """Initialize resources for local authoring.
+@app.callback(invoke_without_command=True)
+def init_callback(ctx: typer.Context) -> None:
+    """Initialize agr for the current project.
 
-    When called without a subcommand, shows help for available init commands.
-    Directories are only created when initializing specific resource types.
+    When called without a subcommand, creates agr.toml and convention directories.
+    Use subcommands to create specific resource scaffolds.
 
     Subcommands:
       agr init skill <name>    Create a new skill scaffold
       agr init command <name>  Create a new command scaffold
       agr init agent <name>    Create a new agent scaffold
       agr init package <name>  Create a new package scaffold
-      agr init repo [name]     Create a full agent-resources repository
     """
-    # Only run if no subcommand was invoked
     if ctx.invoked_subcommand is None:
-        console.print("Initialize agent resources for local authoring.\n")
-        console.print("Usage:")
-        console.print("  agr init skill <name>    Create a new skill in skills/")
-        console.print("  agr init command <name>  Create a new command in commands/")
-        console.print("  agr init agent <name>    Create a new agent in agents/")
-        console.print("  agr init package <name>  Create a new package in packages/")
-        console.print("  agr init repo [name]     Create a full agent-resources repository")
-        console.print("\nDirectories are created automatically when needed.")
+        from agr.config import AgrConfig
 
-
-@app.command("repo")
-def init_repo(
-    name: Annotated[
-        str,
-        typer.Argument(
-            help="Name of the repository to create, or '.' for current directory",
-            metavar="NAME",
-        ),
-    ] = "agent-resources",
-    path: Annotated[
-        Path | None,
-        typer.Option(
-            "--path",
-            "-p",
-            help="Custom path for the repository (default: ./<name>)",
-        ),
-    ] = None,
-    github: Annotated[
-        bool,
-        typer.Option(
-            "--github",
-            "-g",
-            help="Create a GitHub repository and push",
-        ),
-    ] = False,
-) -> None:
-    """Create a new agent-resources repository with starter content.
-
-    Creates a directory structure with example skill, command, and agent files.
-
-    Examples:
-      agr init repo                          # Creates ./agent-resources/
-      agr init repo my-resources             # Creates ./my-resources/
-      agr init repo .                        # Initialize in current directory
-      agr init repo agent-resources --github # Creates and pushes to GitHub
-    """
-    # Determine target path
-    if name == ".":
-        target_path = Path.cwd()
-        # Use directory name for GitHub repo name
-        name = target_path.name
-    else:
-        target_path = path or Path.cwd() / name
-
-        if target_path.exists():
-            console.print(f"[red]Error: Directory already exists: {target_path}[/red]")
-            raise typer.Exit(1)
-
-    # Check if .claude directory already exists
-    claude_dir = target_path / ".claude"
-    if claude_dir.exists():
-        console.print(f"[red]Error: .claude directory already exists at {claude_dir}[/red]")
-        raise typer.Exit(1)
-
-    # Check GitHub CLI if --github flag is set
-    if github:
-        if not check_gh_cli():
-            console.print(
-                "[red]Error: GitHub CLI (gh) is not installed or not authenticated.[/red]\n"
-                "Install it from https://cli.github.com/ and run 'gh auth login'"
-            )
-            raise typer.Exit(1)
-
-        if repo_exists(name):
-            console.print(f"[red]Error: GitHub repository '{name}' already exists.[/red]")
-            raise typer.Exit(1)
-
-    # Get GitHub username for README
-    username = get_github_username() or "<username>"
-
-    # Create the repository
-    console.print(f"Creating agent-resources repository at {target_path}...")
-    create_agent_resources_repo(target_path, username)
-
-    # Initialize git
-    if init_git(target_path):
-        console.print("[green]Initialized git repository[/green]")
-    else:
-        console.print("[yellow]Warning: Could not initialize git repository[/yellow]")
-
-    # Create GitHub repo if requested
-    if github:
-        console.print("Creating GitHub repository...")
-        repo_url = create_github_repo(target_path, name)
-        if repo_url:
-            console.print(f"[green]Created and pushed to {repo_url}[/green]")
-            console.print(f"\nOthers can now install your resources:")
-            console.print(f"  agr add skill {username}/hello-world")
-            console.print(f"  agr add command {username}/hello")
-            console.print(f"  agr add agent {username}/hello-agent")
+        config_path = Path.cwd() / "agr.toml"
+        if config_path.exists():
+            console.print("[yellow]agr.toml already exists[/yellow]")
         else:
-            console.print("[yellow]Warning: Could not create GitHub repository[/yellow]")
-    else:
-        console.print(f"\n[green]Created agent-resources repository at {target_path}[/green]")
+            config = AgrConfig()
+            config.save(config_path)
+            console.print("[green]Created agr.toml[/green]")
+
+        created = _create_convention_structure(Path.cwd())
+        if created:
+            for d in created:
+                console.print(f"[green]Created {d.name}/[/green]")
+
         console.print("\nNext steps:")
-        console.print(f"  cd {target_path}")
-        console.print("  git remote add origin <your-repo-url>")
-        console.print("  git push -u origin main")
+        console.print("  agr init skill <name>    Create a skill")
+        console.print("  agr init command <name>  Create a command")
+        console.print("  agr add ./skills/myskill Add a resource")
 
 
 @app.command("skill")
@@ -222,9 +147,12 @@ def init_skill(
 
     Examples:
       agr init skill my-skill              # Creates ./skills/my-skill/SKILL.md
+      agr init skill skills/my-skill       # Creates ./skills/my-skill/SKILL.md
       agr init skill my-skill --legacy     # Creates ./.claude/skills/my-skill/SKILL.md
       agr init skill code-reviewer --path ./custom/path/
     """
+    # Handle path in name argument
+    name, path = _extract_name_and_path(name, path)
     target_path = _get_resource_target_path(name, path, legacy, "skills", is_directory=True)
     skill_file = target_path / "SKILL.md"
 
@@ -291,9 +219,15 @@ def init_command(
 
     Examples:
       agr init command my-command           # Creates ./commands/my-command.md
+      agr init command commands/my-command  # Creates ./commands/my-command.md
       agr init command my-command --legacy  # Creates ./.claude/commands/my-command.md
       agr init command deploy --path ./custom/path/
     """
+    # Handle path in name argument
+    name, path = _extract_name_and_path(name, path)
+    # For commands, if path was extracted, use parent dir since command is a file
+    if path is not None:
+        path = path.parent
     target_path = _get_resource_target_path(name, path, legacy, "commands")
     command_file = target_path / f"{name}.md"
 
@@ -355,9 +289,15 @@ def init_agent(
 
     Examples:
       agr init agent my-agent           # Creates ./agents/my-agent.md
+      agr init agent agents/my-agent    # Creates ./agents/my-agent.md
       agr init agent my-agent --legacy  # Creates ./.claude/agents/my-agent.md
       agr init agent test-writer --path ./custom/path/
     """
+    # Handle path in name argument
+    name, path = _extract_name_and_path(name, path)
+    # For agents, if path was extracted, use parent dir since agent is a file
+    if path is not None:
+        path = path.parent
     target_path = _get_resource_target_path(name, path, legacy, "agents")
     agent_file = target_path / f"{name}.md"
 

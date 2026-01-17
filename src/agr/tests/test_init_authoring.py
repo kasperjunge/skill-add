@@ -11,36 +11,107 @@ from agr.cli.main import app
 runner = CliRunner()
 
 
-class TestInitCallback:
-    """Tests for agr init (no subcommand) - shows usage info."""
+class TestInitSimplified:
+    """Tests for simplified agr init (uv-inspired)."""
 
-    def test_init_shows_usage_info(self, tmp_path: Path, monkeypatch):
-        """Test that agr init shows usage information without creating dirs."""
+    def test_init_creates_agr_toml(self, tmp_path: Path, monkeypatch):
+        """Test that agr init creates agr.toml."""
         monkeypatch.chdir(tmp_path)
 
         result = runner.invoke(app, ["init"])
 
         assert result.exit_code == 0
-        # Should show usage info, not create directories
+        assert (tmp_path / "agr.toml").exists()
+        assert "Created agr.toml" in result.output
+
+    def test_init_creates_convention_directories(self, tmp_path: Path, monkeypatch):
+        """Test that agr init creates convention directories."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["init"])
+
+        assert result.exit_code == 0
+        assert (tmp_path / "skills").exists()
+        assert (tmp_path / "commands").exists()
+        assert (tmp_path / "agents").exists()
+        assert (tmp_path / "packages").exists()
+
+    def test_init_shows_next_steps(self, tmp_path: Path, monkeypatch):
+        """Test that agr init shows next steps."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["init"])
+
+        assert result.exit_code == 0
+        assert "Next steps" in result.output
         assert "agr init skill" in result.output
-        assert "agr init command" in result.output
-        assert "agr init agent" in result.output
-        assert "agr init package" in result.output
+        assert "agr add" in result.output
 
-        # Should NOT create convention directories automatically
-        assert not (tmp_path / "skills").exists()
-        assert not (tmp_path / "commands").exists()
-        assert not (tmp_path / "agents").exists()
-        assert not (tmp_path / "packages").exists()
-
-    def test_init_mentions_automatic_dir_creation(self, tmp_path: Path, monkeypatch):
-        """Test that agr init mentions dirs are created automatically."""
+    def test_init_idempotent(self, tmp_path: Path, monkeypatch):
+        """Test that agr init is idempotent (can be run multiple times)."""
         monkeypatch.chdir(tmp_path)
+
+        # First run
+        result1 = runner.invoke(app, ["init"])
+        assert result1.exit_code == 0
+
+        # Second run - should not fail
+        result2 = runner.invoke(app, ["init"])
+        assert result2.exit_code == 0
+        assert "already exists" in result2.output
+
+    def test_init_doesnt_recreate_existing_directories(self, tmp_path: Path, monkeypatch):
+        """Test that init doesn't try to recreate existing directories."""
+        monkeypatch.chdir(tmp_path)
+        # Pre-create a directory
+        (tmp_path / "skills").mkdir()
+        (tmp_path / "agr.toml").write_text("dependencies = []")
 
         result = runner.invoke(app, ["init"])
 
         assert result.exit_code == 0
-        assert "automatically" in result.output.lower()
+        # Should not show "Created skills/" since it exists
+        assert "Created skills/" not in result.output
+
+
+class TestInitPathInName:
+    """Tests for path detection in name argument."""
+
+    def test_init_skill_with_path_in_name(self, tmp_path: Path, monkeypatch):
+        """Test that agr init skill skills/my-skill works."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["init", "skill", "skills/my-skill"])
+
+        assert result.exit_code == 0
+        assert (tmp_path / "skills" / "my-skill" / "SKILL.md").exists()
+
+    def test_init_skill_with_relative_path_in_name(self, tmp_path: Path, monkeypatch):
+        """Test that agr init skill ./skills/my-skill works."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["init", "skill", "./skills/my-skill"])
+
+        assert result.exit_code == 0
+        assert (tmp_path / "skills" / "my-skill" / "SKILL.md").exists()
+
+    def test_init_command_with_path_in_name(self, tmp_path: Path, monkeypatch):
+        """Test that agr init command commands/my-cmd works."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["init", "command", "commands/my-cmd"])
+
+        assert result.exit_code == 0
+        assert (tmp_path / "commands" / "my-cmd.md").exists()
+
+    def test_init_agent_with_path_in_name(self, tmp_path: Path, monkeypatch):
+        """Test that agr init agent agents/my-agent works."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["init", "agent", "agents/my-agent"])
+
+        assert result.exit_code == 0
+        assert (tmp_path / "agents" / "my-agent.md").exists()
 
 
 class TestInitSkillAuthoring:

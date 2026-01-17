@@ -69,11 +69,14 @@ class TestAddLocal:
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".git").mkdir()
 
-        # Create local package with subdirs
+        # Create local package with subdirs and a skill (non-empty package)
         pkg_dir = tmp_path / "packages" / "utils"
         pkg_dir.mkdir(parents=True)
-        (pkg_dir / "skills").mkdir()
+        skills_dir = pkg_dir / "skills" / "helper"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("# Helper Skill")
         (pkg_dir / "commands").mkdir()
+        (pkg_dir / "agents").mkdir()
 
         result = runner.invoke(app, ["add", "./packages/utils", "--type", "package"])
 
@@ -234,3 +237,166 @@ class TestIsGlobPattern:
     def test_rejects_plain_path(self):
         from agr.cli.add import _is_glob_pattern
         assert _is_glob_pattern("./commands/deploy.md") is False
+
+
+class TestAddDirectory:
+    """Tests for adding directory of resources."""
+
+    def test_add_directory_adds_all_resources(self, tmp_path: Path, monkeypatch):
+        """Test that adding a directory adds all contained resources."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create a directory with multiple commands
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "cmd1.md").write_text("# Cmd1")
+        (commands_dir / "cmd2.md").write_text("# Cmd2")
+
+        result = runner.invoke(app, ["add", "./commands/"])
+
+        assert result.exit_code == 0
+        assert "cmd1" in result.output
+        assert "cmd2" in result.output
+
+        config = AgrConfig.load(tmp_path / "agr.toml")
+        local_deps = config.get_local_dependencies()
+        assert len(local_deps) == 2
+
+    def test_add_directory_with_skill_subdirs(self, tmp_path: Path, monkeypatch):
+        """Test that directory with skill subdirectories adds all skills."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create skills directory with skill subdirs
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        for name in ["skill1", "skill2"]:
+            skill_dir = skills_dir / name
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(f"# {name}")
+
+        result = runner.invoke(app, ["add", "./skills/"])
+
+        assert result.exit_code == 0
+        assert "skill1" in result.output
+        assert "skill2" in result.output
+
+
+class TestAddEmptyPackage:
+    """Tests for empty package error."""
+
+    def test_add_empty_package_errors(self, tmp_path: Path, monkeypatch):
+        """Test that adding an empty package results in an error."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create empty package
+        pkg_dir = tmp_path / "packages" / "empty"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "skills").mkdir()
+        (pkg_dir / "commands").mkdir()
+        (pkg_dir / "agents").mkdir()
+
+        result = runner.invoke(app, ["add", "./packages/empty", "--type", "package"])
+
+        assert result.exit_code == 1
+        assert "contains no resources" in result.output
+
+
+class TestPackageExplosion:
+    """Tests for package explosion into type directories."""
+
+    def test_package_explodes_to_type_directories(self, tmp_path: Path, monkeypatch):
+        """Test that package contents are installed to their type directories."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create package with skill
+        pkg_dir = tmp_path / "packages" / "toolkit"
+        skills_dir = pkg_dir / "skills" / "myskill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("# My Skill")
+        # Also create commands dir
+        (pkg_dir / "commands").mkdir(parents=True)
+        (pkg_dir / "agents").mkdir(parents=True)
+
+        result = runner.invoke(app, ["add", "./packages/toolkit", "--type", "package"])
+
+        assert result.exit_code == 0
+
+        # Verify installed to .claude/skills/<user>/toolkit/myskill/
+        installed = tmp_path / ".claude" / "skills" / "local" / "toolkit" / "myskill" / "SKILL.md"
+        assert installed.exists()
+
+        # Verify NOT installed to old .claude/packages/ path
+        old_path = tmp_path / ".claude" / "packages"
+        assert not old_path.exists()
+
+
+class TestAddNamespace:
+    """Tests for namespace directory support."""
+
+    def test_add_namespace_directory(self, tmp_path: Path, monkeypatch):
+        """Test adding a namespace directory (directory of skill directories)."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create namespace with multiple skills
+        namespace_dir = tmp_path / "my-namespace"
+        namespace_dir.mkdir()
+        for name in ["skill-a", "skill-b"]:
+            skill_dir = namespace_dir / name
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(f"# {name}")
+
+        result = runner.invoke(app, ["add", "./my-namespace"])
+
+        assert result.exit_code == 0
+        assert "skill-a" in result.output
+        assert "skill-b" in result.output
+
+        # Verify installed to .claude/skills/<user>/<namespace>/<skill>/
+        for name in ["skill-a", "skill-b"]:
+            installed = tmp_path / ".claude" / "skills" / "local" / "my-namespace" / name / "SKILL.md"
+            assert installed.exists()
+
+
+class TestWorkspaceAdd:
+    """Tests for -w/--workspace flag."""
+
+    def test_add_to_workspace_local(self, tmp_path: Path, monkeypatch):
+        """Test adding a local resource to a workspace."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create local skill
+        skill_dir = tmp_path / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# My Skill")
+
+        result = runner.invoke(app, ["add", "./skills/my-skill", "-w", "myworkspace"])
+
+        assert result.exit_code == 0
+        assert "workspace: myworkspace" in result.output
+
+        # Verify agr.toml has packages section
+        config = AgrConfig.load(tmp_path / "agr.toml")
+        assert "myworkspace" in config.packages
+        assert len(config.packages["myworkspace"].dependencies) == 1
+
+    def test_workspace_creates_package_section(self, tmp_path: Path, monkeypatch):
+        """Test that workspace creates the [packages] section in agr.toml."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create local command
+        (tmp_path / "cmd.md").write_text("# Command")
+
+        result = runner.invoke(app, ["add", "./cmd.md", "-w", "mypkg"])
+
+        assert result.exit_code == 0
+
+        content = (tmp_path / "agr.toml").read_text()
+        assert "packages" in content
+        assert "mypkg" in content

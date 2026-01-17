@@ -52,6 +52,23 @@ class Dependency:
         return self.path or self.handle or ""
 
 
+@dataclass
+class PackageConfig:
+    """Workspace package configuration.
+
+    Represents a named workspace that groups related dependencies.
+
+    Example in agr.toml:
+        [packages.myworkspace]
+        path = "./packages/myworkspace"
+        dependencies = [
+            { path = "./skills/tool-use", type = "skill" },
+        ]
+    """
+    path: str
+    dependencies: list["Dependency"] = field(default_factory=list)
+
+
 # Legacy dataclasses for migration support
 @dataclass
 class DependencySpec:
@@ -89,6 +106,7 @@ class AgrConfig:
     """
 
     dependencies: list[Dependency] = field(default_factory=list)
+    packages: dict[str, PackageConfig] = field(default_factory=dict)
     _document: TOMLDocument | None = field(default=None, repr=False)
     _path: Path | None = field(default=None, repr=False)
     _migrated: bool = field(default=False, repr=False)  # Track if migration occurred
@@ -153,6 +171,38 @@ class AgrConfig:
         return dependencies
 
     @classmethod
+    def _parse_packages_section(cls, doc: TOMLDocument) -> dict[str, "PackageConfig"]:
+        """Parse [packages] section from document."""
+        packages: dict[str, PackageConfig] = {}
+        packages_section = doc.get("packages", {})
+
+        if not isinstance(packages_section, dict):
+            return packages
+
+        for name, pkg_data in packages_section.items():
+            if not isinstance(pkg_data, dict):
+                continue
+
+            pkg_path = pkg_data.get("path", f"./packages/{name}")
+            pkg_deps: list[Dependency] = []
+
+            deps_list = pkg_data.get("dependencies", [])
+            for item in deps_list:
+                if not isinstance(item, dict):
+                    continue
+                dep_type = item.get("type", "skill")
+                handle = item.get("handle")
+                path = item.get("path")
+                if handle:
+                    pkg_deps.append(Dependency(handle=handle, type=dep_type))
+                elif path:
+                    pkg_deps.append(Dependency(path=path, type=dep_type))
+
+            packages[name] = PackageConfig(path=pkg_path, dependencies=pkg_deps)
+
+        return packages
+
+    @classmethod
     def load(cls, path: Path) -> "AgrConfig":
         """
         Load configuration from an agr.toml file.
@@ -190,6 +240,9 @@ class AgrConfig:
         else:
             config.dependencies, config._migrated = cls._migrate_old_format(doc)
 
+        # Parse packages section
+        config.packages = cls._parse_packages_section(doc)
+
         return config
 
     def save(self, path: Path | None = None) -> None:
@@ -220,6 +273,26 @@ class AgrConfig:
             deps_array.append(item)
 
         doc["dependencies"] = deps_array
+
+        # Build packages section if any exist
+        if self.packages:
+            packages_table = tomlkit.table()
+            for name, pkg in self.packages.items():
+                pkg_table = tomlkit.table()
+                pkg_table["path"] = pkg.path
+                pkg_deps_array = tomlkit.array()
+                pkg_deps_array.multiline(True)
+                for dep in pkg.dependencies:
+                    item = tomlkit.inline_table()
+                    if dep.handle:
+                        item["handle"] = dep.handle
+                    if dep.path:
+                        item["path"] = dep.path
+                    item["type"] = dep.type
+                    pkg_deps_array.append(item)
+                pkg_table["dependencies"] = pkg_deps_array
+                packages_table[name] = pkg_table
+            doc["packages"] = packages_table
 
         save_path.write_text(tomlkit.dumps(doc))
         self._document = doc
@@ -260,6 +333,23 @@ class AgrConfig:
             resource_type: Type of resource ("skill", "command", "agent", "package")
         """
         self.add_dependency(Dependency(path=path, type=resource_type))
+
+    def add_to_workspace(self, workspace: str, dep: Dependency) -> None:
+        """
+        Add a dependency to a workspace package.
+
+        Creates the workspace if it doesn't exist.
+
+        Args:
+            workspace: Name of the workspace package
+            dep: Dependency to add to the workspace
+        """
+        if workspace not in self.packages:
+            self.packages[workspace] = PackageConfig(path=f"./packages/{workspace}")
+        pkg = self.packages[workspace]
+        # Remove existing with same identifier
+        pkg.dependencies = [d for d in pkg.dependencies if d.identifier != dep.identifier]
+        pkg.dependencies.append(dep)
 
     def remove_dependency(self, identifier: str) -> bool:
         """

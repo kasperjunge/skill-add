@@ -185,7 +185,7 @@ def print_success_message(resource_type: str, name: str, username: str, repo: st
         share_ref = f"{username}/{repo}/{name}"
 
     ctas = [
-        f"Create your own {resource_type} library: agr init repo agent-resources",
+        f"Create your own {resource_type} library: agr init && agr add ./skills/your-skill",
         "Star: https://github.com/kasperjunge/agent-resources",
         f"Share: agr add {resource_type} {share_ref}",
     ]

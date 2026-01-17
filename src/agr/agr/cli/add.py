@@ -30,18 +30,20 @@ def extract_options_from_args(
     args: list[str] | None,
     explicit_type: str | None,
     explicit_to: str | None,
-) -> tuple[list[str], str | None, str | None]:
-    """Extract --type/-t and --to options from args list if present.
+    explicit_workspace: str | None = None,
+) -> tuple[list[str], str | None, str | None, str | None]:
+    """Extract --type/-t, --to, and --workspace/-w options from args list if present.
 
     When options appear after the resource reference, Typer captures them
     as part of the variadic args list. This function extracts them.
     """
     if not args:
-        return [], explicit_type, explicit_to
+        return [], explicit_type, explicit_to, explicit_workspace
 
     cleaned_args = []
     resource_type = explicit_type
     to_package = explicit_to
+    workspace = explicit_workspace
 
     i = 0
     while i < len(args):
@@ -54,11 +56,14 @@ def extract_options_from_args(
         elif arg == "--to" and has_next and to_package is None:
             to_package = args[i + 1]
             i += 2
+        elif arg in ("--workspace", "-w") and has_next and workspace is None:
+            workspace = args[i + 1]
+            i += 2
         else:
             cleaned_args.append(arg)
             i += 1
 
-    return cleaned_args, resource_type, to_package
+    return cleaned_args, resource_type, to_package, workspace
 
 def _is_local_path(ref: str) -> bool:
     """Check if a reference is a local path."""
@@ -73,12 +78,13 @@ def _is_glob_pattern(ref: str) -> bool:
 def _detect_local_type(path: Path) -> str | None:
     """Detect resource type from a local path.
 
-    Returns "skill", "command", "agent", "package", or None if unknown.
+    Returns "skill", "command", "agent", "package", "namespace", or None if unknown.
     Auto-detects based on:
     - Directory with SKILL.md -> skill
     - File with .md extension -> command (or agent if in agents/ dir)
     - Directory in packages/ -> package
     - Directory with skills/, commands/, or agents/ subdirs -> package
+    - Directory containing only skill subdirectories -> namespace
     """
     path_str = str(path)
 
@@ -115,7 +121,66 @@ def _detect_local_type(path: Path) -> str | None:
         if has_subdirs:
             return "package"
 
+        # Check for namespace containing skills (directory of skill directories)
+        subdirs_with_skills = [
+            d for d in path.iterdir()
+            if d.is_dir() and (d / "SKILL.md").exists()
+        ]
+        if subdirs_with_skills:
+            return "namespace"
+
     return None
+
+
+def handle_add_namespace(
+    namespace_path: Path,
+    global_install: bool,
+    workspace: str | None = None,
+) -> None:
+    """Add all skills from a namespace directory.
+
+    A namespace is a directory containing multiple skill subdirectories.
+    Skills are installed to .claude/skills/<user>/<namespace>/<skill>/
+
+    Args:
+        namespace_path: Path to the namespace directory
+        global_install: If True, install to ~/.claude/
+        workspace: Optional workspace package name
+    """
+    config_path, config = get_or_create_config()
+    base_path = get_base_path(global_install)
+    username = get_username_from_git_remote(_find_repo_root()) or "local"
+    namespace_name = namespace_path.name
+
+    added_count = 0
+
+    # Add all skill subdirectories
+    for item in namespace_path.iterdir():
+        if item.is_dir() and (item / "SKILL.md").exists():
+            try:
+                rel_path = f"./{item.relative_to(Path.cwd())}"
+            except ValueError:
+                rel_path = str(item)
+
+            dep = Dependency(path=rel_path, type="skill")
+            if workspace:
+                config.add_to_workspace(workspace, dep)
+            else:
+                config.add_local(rel_path, "skill")
+
+            # Install to .claude/skills/<user>/<namespace>/<skill>/
+            skill_name = item.name
+            dest_path = base_path / "skills" / username / namespace_name / skill_name
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            if dest_path.exists():
+                shutil.rmtree(dest_path)
+            shutil.copytree(item, dest_path)
+
+            console.print(f"[green]Added skill '{namespace_name}/{skill_name}'[/green]")
+            added_count += 1
+
+    config.save(config_path)
+    console.print(f"\n[dim]Added {added_count} skill(s) from namespace '{namespace_name}'[/dim]")
 
 
 def _find_repo_root() -> Path:
@@ -126,6 +191,61 @@ def _find_repo_root() -> Path:
             return current
         current = current.parent
     return Path.cwd()
+
+
+def _explode_package(
+    package_path: Path,
+    username: str,
+    package_name: str,
+    base_path: Path,
+) -> dict[str, int]:
+    """Install package contents to .claude/<type>/<user>/<pkg>/<resource>.
+
+    "Explodes" a package by installing its contents to the appropriate
+    type directories instead of keeping them bundled.
+
+    Args:
+        package_path: Path to the package directory
+        username: Username for namespacing
+        package_name: Name of the package
+        base_path: Base .claude/ path
+
+    Returns:
+        Dict with counts of installed resources by type
+    """
+    counts = {"skills": 0, "commands": 0, "agents": 0}
+
+    # Skills
+    skills_dir = package_path / "skills"
+    if skills_dir.is_dir():
+        for skill in skills_dir.iterdir():
+            if skill.is_dir() and (skill / "SKILL.md").exists():
+                dest = base_path / "skills" / username / package_name / skill.name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(skill, dest)
+                counts["skills"] += 1
+
+    # Commands
+    cmds_dir = package_path / "commands"
+    if cmds_dir.is_dir():
+        for cmd in cmds_dir.glob("*.md"):
+            dest = base_path / "commands" / username / package_name / cmd.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cmd, dest)
+            counts["commands"] += 1
+
+    # Agents
+    agents_dir = package_path / "agents"
+    if agents_dir.is_dir():
+        for agent in agents_dir.glob("*.md"):
+            dest = base_path / "agents" / username / package_name / agent.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(agent, dest)
+            counts["agents"] += 1
+
+    return counts
 
 
 def _install_local_resource(
@@ -142,16 +262,20 @@ def _install_local_resource(
         username: Username for namespacing
         base_path: Base .claude/ path
     """
+    # Handle package explosion
+    if resource_type == "package":
+        counts = _explode_package(source_path, username, source_path.name, base_path)
+        return  # Package is exploded to type directories
+
     type_to_subdir = {
         "skill": "skills",
         "command": "commands",
         "agent": "agents",
-        "package": "packages",
     }
     subdir = type_to_subdir.get(resource_type, "skills")
 
-    if resource_type == "skill" or resource_type == "package":
-        # Skills and packages are directories
+    if resource_type == "skill":
+        # Skills are directories
         name = source_path.name
         dest_path = base_path / subdir / username / name
     else:
@@ -180,6 +304,7 @@ def handle_add_local(
     local_path: str,
     resource_type: str | None,
     global_install: bool = False,
+    workspace: str | None = None,
 ) -> None:
     """Handle adding a local resource to agr.toml and installing to .claude/."""
     path = Path(local_path)
@@ -188,13 +313,41 @@ def handle_add_local(
         console.print(f"[red]Error: Path does not exist: {path}[/red]")
         raise typer.Exit(1)
 
+    # Detect type first to handle namespaces properly
     if not resource_type:
         resource_type = _detect_local_type(path)
-        if not resource_type:
-            console.print(
-                f"[red]Error: Could not detect resource type for '{path}'.[/red]\n"
-                "Use --type to specify: skill, command, agent, or package"
-            )
+
+    # Handle namespace (directory of skill directories) before generic directory check
+    if resource_type == "namespace":
+        handle_add_namespace(path, global_install, workspace)
+        return
+
+    # Check if it's a directory of resources (not a skill itself, not a namespace)
+    if path.is_dir() and not (path / "SKILL.md").exists() and resource_type not in ("package", "namespace"):
+        has_skills = any((d / "SKILL.md").exists() for d in path.iterdir() if d.is_dir())
+        has_md = any(path.glob("*.md"))
+        if has_skills or has_md:
+            handle_add_directory(path, resource_type, global_install, workspace)
+            return
+
+    if not resource_type:
+        console.print(
+            f"[red]Error: Could not detect resource type for '{path}'.[/red]\n"
+            "Use --type to specify: skill, command, agent, or package"
+        )
+        raise typer.Exit(1)
+
+    # Validate that packages are not empty
+    if resource_type == "package":
+        pkg_path = path
+        has_resources = any([
+            any((pkg_path / "skills").glob("*/SKILL.md")) if (pkg_path / "skills").is_dir() else False,
+            any((pkg_path / "commands").glob("*.md")) if (pkg_path / "commands").is_dir() else False,
+            any((pkg_path / "agents").glob("*.md")) if (pkg_path / "agents").is_dir() else False,
+        ])
+        if not has_resources:
+            console.print(f"[red]Error: Package '{pkg_path.name}' contains no resources.[/red]")
+            console.print("[dim]Add skills, commands, or agents to the package first.[/dim]")
             raise typer.Exit(1)
 
     name = path.stem if path.is_file() else path.name
@@ -205,9 +358,13 @@ def handle_add_local(
     if not username:
         username = "local"
 
-    # Add to agr.toml
+    # Add to agr.toml (to workspace if specified, else to main dependencies)
     config_path, config = get_or_create_config()
-    config.add_local(local_path, resource_type)
+    dep = Dependency(path=local_path, type=resource_type)
+    if workspace:
+        config.add_to_workspace(workspace, dep)
+    else:
+        config.add_local(local_path, resource_type)
     config.save(config_path)
 
     # Install to .claude/
@@ -216,7 +373,66 @@ def handle_add_local(
 
     console.print(f"[green]Added local {resource_type} '{name}'[/green]")
     console.print(f"  path: {local_path}")
+    if workspace:
+        console.print(f"  workspace: {workspace}")
     console.print(f"  installed to: .claude/{resource_type}s/{username}/{name}")
+
+
+def handle_add_directory(
+    dir_path: Path,
+    resource_type: str | None,
+    global_install: bool = False,
+    workspace: str | None = None,
+) -> None:
+    """Add all resources in a directory.
+
+    Args:
+        dir_path: Path to the directory containing resources
+        resource_type: Optional explicit resource type
+        global_install: If True, install to ~/.claude/
+        workspace: Optional workspace package name
+    """
+    config_path, config = get_or_create_config()
+    base_path = get_base_path(global_install)
+    username = get_username_from_git_remote(_find_repo_root()) or "local"
+
+    added_count = 0
+
+    # Add skill directories (directories containing SKILL.md)
+    for item in dir_path.iterdir():
+        if item.is_dir() and (item / "SKILL.md").exists():
+            try:
+                rel_path = f"./{item.relative_to(Path.cwd())}"
+            except ValueError:
+                rel_path = str(item)
+            dep = Dependency(path=rel_path, type="skill")
+            if workspace:
+                config.add_to_workspace(workspace, dep)
+            else:
+                config.add_local(rel_path, "skill")
+            _install_local_resource(item, "skill", username, base_path)
+            console.print(f"[green]Added skill '{item.name}'[/green]")
+            added_count += 1
+
+    # Add .md files as commands or agents based on parent directory
+    for md_file in dir_path.glob("*.md"):
+        detected_type = resource_type or _detect_local_type(md_file)
+        if detected_type:
+            try:
+                rel_path = f"./{md_file.relative_to(Path.cwd())}"
+            except ValueError:
+                rel_path = str(md_file)
+            dep = Dependency(path=rel_path, type=detected_type)
+            if workspace:
+                config.add_to_workspace(workspace, dep)
+            else:
+                config.add_local(rel_path, detected_type)
+            _install_local_resource(md_file, detected_type, username, base_path)
+            console.print(f"[green]Added {detected_type} '{md_file.stem}'[/green]")
+            added_count += 1
+
+    config.save(config_path)
+    console.print(f"\n[dim]Added {added_count} resource(s)[/dim]")
 
 
 def handle_add_glob(
@@ -322,6 +538,14 @@ def add_unified(
             help="Install to ~/.claude/ instead of ./.claude/",
         ),
     ] = False,
+    workspace: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workspace",
+            "-w",
+            help="Add to workspace package (groups dependencies together)",
+        ),
+    ] = None,
     to_package: Annotated[
         Optional[str],
         typer.Option(
@@ -350,12 +574,20 @@ def add_unified(
       agr add ./commands/*.md
       agr add ./packages/my-toolkit --type package
     """
-    # Extract --type/-t and --to from args if captured there (happens when options come after ref)
-    cleaned_args, resource_type, to_package = extract_options_from_args(args, resource_type, to_package)
+    # Extract --type/-t, --to, and --workspace/-w from args if captured there (happens when options come after ref)
+    cleaned_args, resource_type, to_package, workspace = extract_options_from_args(args, resource_type, to_package, workspace)
 
     if not cleaned_args:
         console.print(ctx.get_help())
         raise typer.Exit(0)
+
+    # Check for multiple local paths (shell-expanded glob)
+    local_paths = [arg for arg in cleaned_args if _is_local_path(arg)]
+    if len(local_paths) > 1:
+        # Shell expanded a glob pattern, process all local paths
+        for local_path in local_paths:
+            handle_add_local(local_path, resource_type, global_install, workspace)
+        return
 
     first_arg = cleaned_args[0]
 
@@ -366,7 +598,7 @@ def add_unified(
 
     # Handle local paths
     if _is_local_path(first_arg):
-        handle_add_local(first_arg, resource_type, global_install)
+        handle_add_local(first_arg, resource_type, global_install, workspace)
         return
 
     # Handle deprecated subcommand syntax: agr add skill <ref>
