@@ -13,6 +13,39 @@ console = Console()
 # Deprecated subcommand names
 DEPRECATED_SUBCOMMANDS = {"skill", "command", "agent", "bundle"}
 
+
+def extract_type_from_args(
+    args: list[str] | None, explicit_type: str | None
+) -> tuple[list[str], str | None]:
+    """
+    Extract --type/-t option from args list if present.
+
+    When --type or -t appears after the resource name, Typer captures it
+    as part of the variadic args list. This function extracts it.
+
+    Args:
+        args: The argument list (may contain --type/-t)
+        explicit_type: The resource_type value from Typer (may be None if type was in args)
+
+    Returns:
+        Tuple of (cleaned_args, resource_type)
+    """
+    if not args or explicit_type is not None:
+        return args or [], explicit_type
+
+    cleaned_args = []
+    resource_type = None
+    i = 0
+    while i < len(args):
+        if args[i] in ("--type", "-t") and i + 1 < len(args):
+            resource_type = args[i + 1]
+            i += 2  # Skip both --type and its value
+        else:
+            cleaned_args.append(args[i])
+            i += 1
+
+    return cleaned_args, resource_type
+
 app = typer.Typer(
     help="Remove skills, commands, or agents.",
 )
@@ -52,19 +85,22 @@ def remove_unified(
       agr remove hello-world --type skill
       agr remove hello-world --global
     """
-    if not args:
+    # Extract --type/-t from args if it was captured there (happens when type comes after name)
+    cleaned_args, resource_type = extract_type_from_args(args, resource_type)
+
+    if not cleaned_args:
         console.print(ctx.get_help())
         raise typer.Exit(0)
 
-    first_arg = args[0]
+    first_arg = cleaned_args[0]
 
     # Handle deprecated subcommand syntax: agr remove skill <name>
     if first_arg in DEPRECATED_SUBCOMMANDS:
-        if len(args) < 2:
+        if len(cleaned_args) < 2:
             console.print(f"[red]Error: Missing resource name after '{first_arg}'.[/red]")
             raise typer.Exit(1)
 
-        name = args[1]
+        name = cleaned_args[1]
         if first_arg == "bundle":
             console.print(
                 f"[yellow]Warning: 'agr remove bundle' is deprecated. "

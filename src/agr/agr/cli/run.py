@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 
 from agr.cli.common import (
+    DEFAULT_REPO_NAME,
     discover_runnable_resource,
     fetch_spinner,
     get_destination,
@@ -21,6 +22,40 @@ from agr.fetcher import RESOURCE_CONFIGS, ResourceType, downloaded_repo, fetch_r
 
 # Deprecated subcommand names
 DEPRECATED_SUBCOMMANDS = {"skill", "command"}
+
+
+def extract_type_from_args(
+    args: list[str] | None, explicit_type: str | None
+) -> tuple[list[str], str | None]:
+    """
+    Extract --type/-t option from args list if present.
+
+    When --type or -t appears after the resource reference, Typer captures it
+    as part of the variadic args list. This function extracts it.
+
+    Args:
+        args: The argument list (may contain --type/-t)
+        explicit_type: The resource_type value from Typer (may be None if type was in args)
+
+    Returns:
+        Tuple of (cleaned_args, resource_type)
+    """
+    if not args or explicit_type is not None:
+        return args or [], explicit_type
+
+    cleaned_args = []
+    resource_type = None
+    i = 0
+    while i < len(args):
+        if args[i] in ("--type", "-t") and i + 1 < len(args):
+            resource_type = args[i + 1]
+            i += 2  # Skip both --type and its value
+        else:
+            cleaned_args.append(args[i])
+            i += 1
+
+    return cleaned_args, resource_type
+
 
 app = typer.Typer(
     name="agrx",
@@ -201,9 +236,14 @@ def _run_resource_unified(
                     raise typer.Exit(1)
 
                 if discovery.is_ambiguous:
+                    # Build helpful example commands for each type found
+                    ref = f"{username}/{name}" if repo_name == DEFAULT_REPO_NAME else f"{username}/{repo_name}/{name}"
+                    examples = "\n".join(
+                        f"  agrx {ref} --type {t}" for t in discovery.found_types
+                    )
                     console.print(
                         f"[red]Error: Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.[/red]\n"
-                        f"Use --type to specify which one to run.",
+                        f"Use --type to specify which one to run:\n{examples}",
                     )
                     raise typer.Exit(1)
 
@@ -307,20 +347,23 @@ def run_unified(
       agrx kasperjunge/my-repo/hello-world --type skill
       agrx kasperjunge/hello-world --interactive
     """
-    if not args:
+    # Extract --type/-t from args if it was captured there (happens when type comes after ref)
+    cleaned_args, resource_type = extract_type_from_args(args, resource_type)
+
+    if not cleaned_args:
         console.print(ctx.get_help())
         raise typer.Exit(0)
 
-    first_arg = args[0]
+    first_arg = cleaned_args[0]
 
     # Handle deprecated subcommand syntax: agrx skill <ref>
     if first_arg in DEPRECATED_SUBCOMMANDS:
-        if len(args) < 2:
+        if len(cleaned_args) < 2:
             console.print(f"[red]Error: Missing resource reference after '{first_arg}'.[/red]")
             raise typer.Exit(1)
 
-        resource_ref = args[1]
-        prompt_or_args = args[2] if len(args) > 2 else None
+        resource_ref = cleaned_args[1]
+        prompt_or_args = cleaned_args[2] if len(cleaned_args) > 2 else None
         console.print(
             f"[yellow]Warning: 'agrx {first_arg}' is deprecated. "
             f"Use 'agrx {resource_ref}' instead.[/yellow]"
@@ -334,7 +377,7 @@ def run_unified(
 
     # Normal unified run: agrx <ref> [prompt]
     resource_ref = first_arg
-    prompt_or_args = args[1] if len(args) > 1 else None
+    prompt_or_args = cleaned_args[1] if len(cleaned_args) > 1 else None
     _run_resource_unified(resource_ref, prompt_or_args, interactive, global_install, resource_type)
 
 

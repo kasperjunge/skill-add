@@ -576,9 +576,14 @@ def handle_add_unified(
                     raise typer.Exit(1)
 
                 if discovery.is_ambiguous:
+                    # Build helpful example commands for each type found
+                    ref = f"{username}/{name}" if repo_name == DEFAULT_REPO_NAME else f"{username}/{repo_name}/{name}"
+                    examples = "\n".join(
+                        f"  agr add {ref} --type {t}" for t in discovery.found_types
+                    )
                     raise MultipleResourcesFoundError(
                         f"Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
-                        f"Use --type to specify which one to install."
+                        f"Use --type to specify which one to install:\n{examples}"
                     )
 
                 # Install the unique resource
@@ -649,9 +654,13 @@ def handle_remove_unified(
         raise typer.Exit(1)
 
     if discovery.is_ambiguous:
+        # Build helpful example commands for each type found
+        examples = "\n".join(
+            f"  agr remove {name} --type {t}" for t in discovery.found_types
+        )
         typer.echo(
             f"Error: Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
-            f"Use --type to specify which one to remove.",
+            f"Use --type to specify which one to remove:\n{examples}",
             err=True,
         )
         raise typer.Exit(1)

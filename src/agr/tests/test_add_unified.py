@@ -79,6 +79,43 @@ class TestAddUnifiedCommand:
 
         mock_fetch.assert_called_once()
 
+    # Tests for --type AFTER resource reference (common user pattern)
+    @patch("agr.cli.common.fetch_resource")
+    def test_explicit_type_after_ref_skill(self, mock_fetch):
+        """Test that 'agr add ref --type skill' works (type after resource)."""
+        result = runner.invoke(app, ["add", "testuser/hello-world", "--type", "skill"])
+
+        mock_fetch.assert_called_once()
+        call_args = mock_fetch.call_args
+        assert call_args[0][5] == ResourceType.SKILL
+
+    @patch("agr.cli.common.fetch_resource")
+    def test_explicit_type_after_ref_command(self, mock_fetch):
+        """Test that 'agr add ref --type command' works (type after resource)."""
+        result = runner.invoke(app, ["add", "testuser/hello", "--type", "command"])
+
+        mock_fetch.assert_called_once()
+        call_args = mock_fetch.call_args
+        assert call_args[0][5] == ResourceType.COMMAND
+
+    @patch("agr.cli.common.fetch_resource")
+    def test_explicit_type_after_ref_agent(self, mock_fetch):
+        """Test that 'agr add ref --type agent' works (type after resource)."""
+        result = runner.invoke(app, ["add", "testuser/hello-agent", "--type", "agent"])
+
+        mock_fetch.assert_called_once()
+        call_args = mock_fetch.call_args
+        assert call_args[0][5] == ResourceType.AGENT
+
+    @patch("agr.cli.common.fetch_resource")
+    def test_explicit_type_short_flag_after_ref(self, mock_fetch):
+        """Test that 'agr add ref -t command' works (short flag after resource)."""
+        result = runner.invoke(app, ["add", "testuser/hello", "-t", "command"])
+
+        mock_fetch.assert_called_once()
+        call_args = mock_fetch.call_args
+        assert call_args[0][5] == ResourceType.COMMAND
+
     def test_invalid_type_shows_error(self):
         """Test that invalid --type shows an error."""
         result = runner.invoke(app, ["add", "--type", "invalid", "testuser/hello"])
