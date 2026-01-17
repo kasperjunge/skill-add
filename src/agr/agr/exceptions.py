@@ -19,3 +19,7 @@ class ResourceExistsError(AgrError):
 
 class BundleNotFoundError(AgrError):
     """Raised when no bundle directory exists in any resource type."""
+
+
+class MultipleResourcesFoundError(AgrError):
+    """Raised when a resource name exists in multiple resource types."""

@@ -3,9 +3,11 @@
 import shutil
 import tarfile
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Generator
 
 import httpx
 
@@ -62,6 +64,51 @@ RESOURCE_CONFIGS: dict[ResourceType, ResourceConfig] = {
 }
 
 
+# Discovery dataclasses for auto-detection
+
+
+@dataclass
+class DiscoveredResource:
+    """Holds information about a discovered resource."""
+
+    name: str
+    resource_type: ResourceType
+    path_segments: list[str]
+
+
+@dataclass
+class DiscoveryResult:
+    """Result of resource discovery operation."""
+
+    resources: list[DiscoveredResource] = field(default_factory=list)
+    is_bundle: bool = False
+
+    @property
+    def is_unique(self) -> bool:
+        """Return True if exactly one resource type was found (including bundle)."""
+        total = len(self.resources) + (1 if self.is_bundle else 0)
+        return total == 1
+
+    @property
+    def is_ambiguous(self) -> bool:
+        """Return True if multiple resource types were found."""
+        total = len(self.resources) + (1 if self.is_bundle else 0)
+        return total > 1
+
+    @property
+    def is_empty(self) -> bool:
+        """Return True if no resources were found."""
+        return len(self.resources) == 0 and not self.is_bundle
+
+    @property
+    def found_types(self) -> list[str]:
+        """Return list of resource type names found."""
+        types = [r.resource_type.value for r in self.resources]
+        if self.is_bundle:
+            types.append("bundle")
+        return types
+
+
 def _build_resource_path(base_dir: Path, config: ResourceConfig, path_segments: list[str]) -> Path:
     """Build a resource path from base directory and segments."""
     if config.is_directory:
@@ -95,6 +142,255 @@ def _download_and_extract_tarball(tarball_url: str, username: str, repo_name: st
         tar.extractall(extract_path)
 
     return extract_path / f"{repo_name}-main"
+
+
+@contextmanager
+def downloaded_repo(
+    username: str, repo_name: str
+) -> Generator[Path, None, None]:
+    """
+    Context manager that downloads a repo tarball once and yields the repo directory.
+
+    This allows both discovery and fetching to happen within the same temporary directory,
+    avoiding double downloads.
+
+    Args:
+        username: GitHub username
+        repo_name: GitHub repository name
+
+    Yields:
+        Path to the extracted repository directory
+
+    Raises:
+        RepoNotFoundError: If the repository doesn't exist
+    """
+    tarball_url = (
+        f"https://github.com/{username}/{repo_name}/archive/refs/heads/main.tar.gz"
+    )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        repo_dir = _download_and_extract_tarball(
+            tarball_url, username, repo_name, Path(tmp_dir)
+        )
+        yield repo_dir
+
+
+def discover_resource_type_from_dir(
+    repo_dir: Path,
+    name: str,
+    path_segments: list[str],
+) -> DiscoveryResult:
+    """
+    Search all resource directories to find matching resources.
+
+    Priority order for detection:
+    1. Skill (.claude/skills/{name}/SKILL.md or .claude/skills/{path}/SKILL.md)
+    2. Command (.claude/commands/{name}.md or .claude/commands/{path}.md)
+    3. Agent (.claude/agents/{name}.md or .claude/agents/{path}.md)
+    4. Bundle (.claude/*/name/ directories with resources)
+
+    Args:
+        repo_dir: Path to extracted repository
+        name: Display name of the resource
+        path_segments: Path segments for the resource
+
+    Returns:
+        DiscoveryResult with list of discovered resources
+    """
+    result = DiscoveryResult()
+
+    # Check for skill (directory with SKILL.md)
+    skill_config = RESOURCE_CONFIGS[ResourceType.SKILL]
+    skill_path = _build_resource_path(
+        repo_dir / skill_config.source_subdir, skill_config, path_segments
+    )
+    if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.SKILL,
+                path_segments=path_segments,
+            )
+        )
+
+    # Check for command (markdown file)
+    command_config = RESOURCE_CONFIGS[ResourceType.COMMAND]
+    command_path = _build_resource_path(
+        repo_dir / command_config.source_subdir, command_config, path_segments
+    )
+    if command_path.is_file():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.COMMAND,
+                path_segments=path_segments,
+            )
+        )
+
+    # Check for agent (markdown file)
+    agent_config = RESOURCE_CONFIGS[ResourceType.AGENT]
+    agent_path = _build_resource_path(
+        repo_dir / agent_config.source_subdir, agent_config, path_segments
+    )
+    if agent_path.is_file():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.AGENT,
+                path_segments=path_segments,
+            )
+        )
+
+    # Check for bundle (directory with resources in any of the three locations)
+    bundle_name = path_segments[-1] if path_segments else name
+    bundle_contents = discover_bundle_contents(repo_dir, bundle_name)
+    if not bundle_contents.is_empty:
+        result.is_bundle = True
+
+    return result
+
+
+def _is_bundle(repo_dir: Path, path_segments: list[str]) -> bool:
+    """Check if a name refers to a bundle in the repo."""
+    bundle_name = path_segments[-1] if path_segments else ""
+    if not bundle_name:
+        return False
+    bundle_contents = discover_bundle_contents(repo_dir, bundle_name)
+    return not bundle_contents.is_empty
+
+
+def fetch_resource_from_repo_dir(
+    repo_dir: Path,
+    name: str,
+    path_segments: list[str],
+    dest: Path,
+    resource_type: ResourceType,
+    overwrite: bool = False,
+) -> Path:
+    """
+    Fetch a resource from an already-downloaded repo directory.
+
+    This avoids double downloads when used with downloaded_repo context manager.
+
+    Args:
+        repo_dir: Path to extracted repository
+        name: Display name of the resource
+        path_segments: Path segments for the resource
+        dest: Destination directory
+        resource_type: Type of resource
+        overwrite: Whether to overwrite existing resource
+
+    Returns:
+        Path to the installed resource
+
+    Raises:
+        ResourceNotFoundError: If the resource doesn't exist in the repo
+        ResourceExistsError: If resource exists locally and overwrite=False
+    """
+    config = RESOURCE_CONFIGS[resource_type]
+    resource_dest = _build_resource_path(dest, config, path_segments)
+
+    # Check if resource already exists locally
+    if resource_dest.exists() and not overwrite:
+        raise ResourceExistsError(
+            f"{resource_type.value.capitalize()} '{name}' already exists at {resource_dest}\n"
+            f"Use --overwrite to replace it."
+        )
+
+    source_base = repo_dir / config.source_subdir
+    resource_source = _build_resource_path(source_base, config, path_segments)
+
+    if not resource_source.exists():
+        nested_path = "/".join(path_segments)
+        if config.is_directory:
+            expected_location = f"{config.source_subdir}/{nested_path}/"
+        else:
+            expected_location = f"{config.source_subdir}/{nested_path}{config.file_extension}"
+        raise ResourceNotFoundError(
+            f"{resource_type.value.capitalize()} '{name}' not found.\n"
+            f"Expected location: {expected_location}"
+        )
+
+    # Remove existing if overwriting
+    if resource_dest.exists():
+        if config.is_directory:
+            shutil.rmtree(resource_dest)
+        else:
+            resource_dest.unlink()
+
+    # Ensure destination parent exists
+    resource_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy resource to destination
+    if config.is_directory:
+        shutil.copytree(resource_source, resource_dest)
+    else:
+        shutil.copy2(resource_source, resource_dest)
+
+    return resource_dest
+
+
+def fetch_bundle_from_repo_dir(
+    repo_dir: Path,
+    bundle_name: str,
+    dest_base: Path,
+    overwrite: bool = False,
+) -> "BundleInstallResult":
+    """
+    Fetch and install a bundle from an already-downloaded repo directory.
+
+    Args:
+        repo_dir: Path to extracted repository
+        bundle_name: Name of the bundle directory
+        dest_base: Base destination directory (e.g., .claude/)
+        overwrite: Whether to overwrite existing resources
+
+    Returns:
+        BundleInstallResult with installed and skipped resources
+
+    Raises:
+        BundleNotFoundError: If bundle directory doesn't exist
+    """
+    contents = discover_bundle_contents(repo_dir, bundle_name)
+
+    if contents.is_empty:
+        raise BundleNotFoundError(
+            f"Bundle '{bundle_name}' not found.\n"
+            f"Expected one of:\n"
+            f"  - .claude/skills/{bundle_name}/*/SKILL.md\n"
+            f"  - .claude/commands/{bundle_name}/*.md\n"
+            f"  - .claude/agents/{bundle_name}/*.md"
+        )
+
+    result = BundleInstallResult()
+
+    # Install skills (directories)
+    result.installed_skills, result.skipped_skills = _install_bundle_directory(
+        contents.skills,
+        repo_dir / ".claude" / "skills" / bundle_name,
+        dest_base / "skills",
+        bundle_name,
+        overwrite,
+    )
+
+    # Install commands (files)
+    result.installed_commands, result.skipped_commands = _install_bundle_files(
+        contents.commands,
+        repo_dir / ".claude" / "commands" / bundle_name,
+        dest_base / "commands",
+        bundle_name,
+        overwrite,
+    )
+
+    # Install agents (files)
+    result.installed_agents, result.skipped_agents = _install_bundle_files(
+        contents.agents,
+        repo_dir / ".claude" / "agents" / bundle_name,
+        dest_base / "agents",
+        bundle_name,
+        overwrite,
+    )
+
+    return result
 
 
 def fetch_resource(

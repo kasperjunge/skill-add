@@ -13,6 +13,7 @@ from rich.spinner import Spinner
 from agr.exceptions import (
     AgrError,
     BundleNotFoundError,
+    MultipleResourcesFoundError,
     RepoNotFoundError,
     ResourceExistsError,
     ResourceNotFoundError,
@@ -20,9 +21,16 @@ from agr.exceptions import (
 from agr.fetcher import (
     BundleInstallResult,
     BundleRemoveResult,
+    DiscoveredResource,
+    DiscoveryResult,
+    RESOURCE_CONFIGS,
     ResourceType,
+    discover_resource_type_from_dir,
+    downloaded_repo,
     fetch_bundle,
+    fetch_bundle_from_repo_dir,
     fetch_resource,
+    fetch_resource_from_repo_dir,
     remove_bundle,
 )
 
@@ -458,3 +466,249 @@ def handle_remove_bundle(
     except OSError as e:
         typer.echo(f"Error: Failed to remove bundle: {e}", err=True)
         raise typer.Exit(1)
+
+
+# Unified handlers for auto-detection
+
+
+def discover_local_resource_type(name: str, global_install: bool) -> DiscoveryResult:
+    """
+    Discover which resource types exist locally for a given name.
+
+    Args:
+        name: Resource name to search for
+        global_install: If True, search in ~/.claude/, else in ./.claude/
+
+    Returns:
+        DiscoveryResult with list of found resource types
+    """
+    result = DiscoveryResult()
+    base_path = get_base_path(global_install)
+
+    # Check for skill (directory with SKILL.md)
+    skill_path = base_path / "skills" / name
+    if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.SKILL,
+                path_segments=[name],
+            )
+        )
+
+    # Check for command (markdown file)
+    command_path = base_path / "commands" / f"{name}.md"
+    if command_path.is_file():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.COMMAND,
+                path_segments=[name],
+            )
+        )
+
+    # Check for agent (markdown file)
+    agent_path = base_path / "agents" / f"{name}.md"
+    if agent_path.is_file():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.AGENT,
+                path_segments=[name],
+            )
+        )
+
+    return result
+
+
+def handle_add_unified(
+    resource_ref: str,
+    resource_type: str | None = None,
+    overwrite: bool = False,
+    global_install: bool = False,
+) -> None:
+    """
+    Unified handler for adding any resource with auto-detection.
+
+    Args:
+        resource_ref: Resource reference (e.g., "username/resource-name")
+        resource_type: Optional explicit type ("skill", "command", "agent", "bundle")
+        overwrite: Whether to overwrite existing resource
+        global_install: If True, install to ~/.claude/, else to ./.claude/
+    """
+    try:
+        username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
+    except typer.BadParameter as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+    # If explicit type provided, delegate to specific handler
+    if resource_type:
+        type_lower = resource_type.lower()
+        if type_lower == "skill":
+            handle_add_resource(resource_ref, ResourceType.SKILL, "skills", overwrite, global_install)
+            return
+        elif type_lower == "command":
+            handle_add_resource(resource_ref, ResourceType.COMMAND, "commands", overwrite, global_install)
+            return
+        elif type_lower == "agent":
+            handle_add_resource(resource_ref, ResourceType.AGENT, "agents", overwrite, global_install)
+            return
+        elif type_lower == "bundle":
+            handle_add_bundle(resource_ref, overwrite, global_install)
+            return
+        else:
+            typer.echo(f"Error: Unknown resource type '{resource_type}'. Use: skill, command, agent, or bundle.", err=True)
+            raise typer.Exit(1)
+
+    # Auto-detect type by downloading repo once
+    try:
+        with fetch_spinner():
+            with downloaded_repo(username, repo_name) as repo_dir:
+                discovery = discover_resource_type_from_dir(repo_dir, name, path_segments)
+
+                if discovery.is_empty:
+                    typer.echo(
+                        f"Error: Resource '{name}' not found in {username}/{repo_name}.\n"
+                        f"Searched in: skills, commands, agents, bundles.",
+                        err=True,
+                    )
+                    raise typer.Exit(1)
+
+                if discovery.is_ambiguous:
+                    raise MultipleResourcesFoundError(
+                        f"Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
+                        f"Use --type to specify which one to install."
+                    )
+
+                # Install the unique resource
+                dest_base = get_base_path(global_install)
+
+                if discovery.is_bundle:
+                    bundle_name = path_segments[-1] if path_segments else name
+                    result = fetch_bundle_from_repo_dir(repo_dir, bundle_name, dest_base, overwrite)
+                    print_bundle_success_message(bundle_name, result, username, repo_name)
+                else:
+                    resource = discovery.resources[0]
+                    config = RESOURCE_CONFIGS[resource.resource_type]
+                    dest = dest_base / config.dest_subdir
+                    fetch_resource_from_repo_dir(
+                        repo_dir, name, path_segments, dest, resource.resource_type, overwrite
+                    )
+                    print_success_message(resource.resource_type.value, name, username, repo_name)
+
+    except (RepoNotFoundError, ResourceExistsError, BundleNotFoundError, MultipleResourcesFoundError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+    except AgrError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+def handle_remove_unified(
+    name: str,
+    resource_type: str | None = None,
+    global_install: bool = False,
+) -> None:
+    """
+    Unified handler for removing any resource with auto-detection.
+
+    Args:
+        name: Resource name to remove
+        resource_type: Optional explicit type ("skill", "command", "agent", "bundle")
+        global_install: If True, remove from ~/.claude/, else from ./.claude/
+    """
+    # If explicit type provided, delegate to specific handler
+    if resource_type:
+        type_lower = resource_type.lower()
+        if type_lower == "skill":
+            handle_remove_resource(name, ResourceType.SKILL, "skills", global_install)
+            return
+        elif type_lower == "command":
+            handle_remove_resource(name, ResourceType.COMMAND, "commands", global_install)
+            return
+        elif type_lower == "agent":
+            handle_remove_resource(name, ResourceType.AGENT, "agents", global_install)
+            return
+        elif type_lower == "bundle":
+            handle_remove_bundle(name, global_install)
+            return
+        else:
+            typer.echo(f"Error: Unknown resource type '{resource_type}'. Use: skill, command, agent, or bundle.", err=True)
+            raise typer.Exit(1)
+
+    # Auto-detect type from local files
+    discovery = discover_local_resource_type(name, global_install)
+
+    if discovery.is_empty:
+        typer.echo(
+            f"Error: Resource '{name}' not found locally.\n"
+            f"Searched in: skills, commands, agents.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if discovery.is_ambiguous:
+        typer.echo(
+            f"Error: Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
+            f"Use --type to specify which one to remove.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Remove the unique resource
+    resource = discovery.resources[0]
+    handle_remove_resource(name, resource.resource_type, RESOURCE_CONFIGS[resource.resource_type].dest_subdir, global_install)
+
+
+def discover_runnable_resource(
+    repo_dir: Path,
+    name: str,
+    path_segments: list[str],
+) -> DiscoveryResult:
+    """
+    Discover runnable resources (skills and commands only, not agents/bundles).
+
+    Used by agrx to determine what type of resource to run.
+
+    Args:
+        repo_dir: Path to extracted repository
+        name: Display name of the resource
+        path_segments: Path segments for the resource
+
+    Returns:
+        DiscoveryResult with list of discovered runnable resources
+    """
+    result = DiscoveryResult()
+
+    # Check for skill (directory with SKILL.md)
+    skill_config = RESOURCE_CONFIGS[ResourceType.SKILL]
+    skill_path = repo_dir / skill_config.source_subdir
+    for segment in path_segments:
+        skill_path = skill_path / segment
+    if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.SKILL,
+                path_segments=path_segments,
+            )
+        )
+
+    # Check for command (markdown file)
+    command_config = RESOURCE_CONFIGS[ResourceType.COMMAND]
+    command_path = repo_dir / command_config.source_subdir
+    for segment in path_segments[:-1]:
+        command_path = command_path / segment
+    if path_segments:
+        command_path = command_path / f"{path_segments[-1]}.md"
+    if command_path.is_file():
+        result.resources.append(
+            DiscoveredResource(
+                name=name,
+                resource_type=ResourceType.COMMAND,
+                path_segments=path_segments,
+            )
+        )
+
+    return result
