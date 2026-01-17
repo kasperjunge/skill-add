@@ -58,6 +58,7 @@ nav:
   - Guides:
       - Installing resources: guides/installing-resources.md
       - Managing dependencies: guides/managing-dependencies.md
+      - Local resource authoring: guides/local-authoring.md
       - Bundles: guides/bundles.md
       - Creating resources: guides/creating-resources.md
       - Creating a shareable repo: guides/creating-repo.md

@@ -78,7 +78,20 @@ Valid types: `skill`, `command`, `agent`
 agr sync
 ```
 
-This reads `agr.toml` and installs any resources that aren't already present. Resources that are already installed are skipped.
+This syncs both:
+
+1. **Local authoring resources** — From `skills/`, `commands/`, `agents/`, `packages/`
+2. **Remote dependencies** — From `agr.toml`
+
+Resources that are already installed are skipped.
+
+### Sync only remote dependencies
+
+```bash
+agr sync --remote
+```
+
+Skips local authoring resources and only installs dependencies from `agr.toml`.
 
 ### Sync globally
 

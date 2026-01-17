@@ -128,7 +128,53 @@ The resource is downloaded, executed, and cleaned up automatically.
 
 ---
 
-## Create Your Own Library
+## Local Resource Authoring
+
+**New:** Author resources in convention paths and sync them to `.claude/`.
+
+### Set Up Authoring Structure
+
+```bash
+agr init
+```
+
+Creates the standard authoring directories:
+
+```
+./
+├── skills/       # Your skills
+├── commands/     # Your commands
+├── agents/       # Your agents
+└── packages/     # Grouped resources
+```
+
+### Create Resources
+
+```bash
+agr init skill my-skill       # Creates skills/my-skill/SKILL.md
+agr init command deploy       # Creates commands/deploy.md
+agr init agent reviewer       # Creates agents/reviewer.md
+agr init package my-toolkit   # Creates packages/my-toolkit/
+```
+
+### Sync to .claude/
+
+```bash
+agr sync
+```
+
+Copies your resources to `.claude/{type}/{username}/` where Claude Code can use them. Your Git remote determines the username namespace.
+
+### Benefits
+
+- **Clean separation** — Source files in convention paths, installed files in `.claude/`
+- **Automatic namespacing** — Resources are organized by your GitHub username
+- **Incremental updates** — Only changed files are synced
+- **Prune support** — `agr sync --prune` removes resources you've deleted
+
+---
+
+## Create a Shareable Repository
 
 Create your personal agent-resources library:
 
@@ -152,17 +198,25 @@ agr add <your-username>/hello-world
 
 ### Add Your Own Resources
 
-Edit the files in your repo:
+Author resources in convention paths:
 
 ```
 your-username/agent-resources/
-└── .claude/
-    ├── skills/          # Skill folders with SKILL.md
-    ├── commands/        # Slash command .md files
-    └── agents/          # Sub-agent .md files
+├── skills/              # Your skills (synced to .claude/)
+│   └── hello-world/
+│       └── SKILL.md
+├── commands/            # Your commands
+│   └── hello.md
+├── agents/              # Your agents
+│   └── hello-agent.md
+└── packages/            # Grouped resources
+    └── my-toolkit/
+        ├── skills/
+        ├── commands/
+        └── agents/
 ```
 
-Push to GitHub.
+Run `agr sync` to install them locally, then push to GitHub.
 
 ---
 

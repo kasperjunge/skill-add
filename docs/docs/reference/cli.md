@@ -12,13 +12,14 @@ agr --help
 
 ## agr add
 
-Add resources from GitHub with auto-detection.
+Add resources from GitHub or local paths.
 
 ### Syntax
 
 ```bash
 agr add <username>/<name>
 agr add <username>/<repo>/<name>
+agr add ./path/to/resource
 ```
 
 The resource type (skill, command, agent, or bundle) is automatically detected.
@@ -28,6 +29,7 @@ The resource type (skill, command, agent, or bundle) is automatically detected.
 - `--type`, `-t`: Explicit resource type (`skill`, `command`, `agent`, `bundle`)
 - `--global`, `-g`: Install to `~/.claude/` instead of the current directory
 - `--overwrite`: Replace an existing resource
+- `--to`: Add local resource to a package namespace (local paths only)
 
 ### Examples
 
@@ -46,6 +48,12 @@ agr add username/backend:hello-world
 
 # Bundles (auto-detected)
 agr add kasperjunge/anthropic
+
+# Add local path to agr.toml
+agr add ./custom/skill --type skill
+
+# Add local resource to a package
+agr add ./scripts/deploy.md --type command --to my-toolkit
 ```
 
 ### Where resources go
@@ -81,52 +89,81 @@ Use --type to specify which one to install:
 
 ## agr sync
 
-Synchronize installed resources with `agr.toml`.
+Synchronize resources from local authoring paths and remote dependencies.
 
 ### Syntax
 
 ```bash
 agr sync
 agr sync --prune
+agr sync --local
+agr sync --remote
 agr sync --global
 ```
+
+### What gets synced
+
+By default, `agr sync` syncs both:
+
+1. **Local authoring resources** — From `skills/`, `commands/`, `agents/`, `packages/`
+2. **Remote dependencies** — From `agr.toml`
 
 ### Options
 
 - `--global`, `-g`: Sync resources in `~/.claude/` instead of the current directory
-- `--prune`, `-p`: Remove namespaced resources not listed in `agr.toml`
+- `--prune`: Remove resources that no longer exist in source or `agr.toml`
+- `--local`: Only sync local authoring resources
+- `--remote`: Only sync remote dependencies from `agr.toml`
 
 ### Examples
 
 ```bash
-# Install missing resources from agr.toml
+# Sync both local and remote resources
 agr sync
 
-# Install missing and remove unlisted resources
+# Only sync local authoring resources
+agr sync --local
+
+# Only sync remote dependencies
+agr sync --remote
+
+# Sync and remove deleted resources
 agr sync --prune
 
 # Sync global resources
 agr sync --global
 ```
 
-### Behavior
+### Local authoring sync
+
+Discovers resources in convention paths and copies them to `.claude/`:
+
+| Source | Destination |
+|--------|-------------|
+| `skills/<name>/` | `.claude/skills/<username>/<name>/` |
+| `commands/<name>.md` | `.claude/commands/<username>/<name>.md` |
+| `agents/<name>.md` | `.claude/agents/<username>/<name>.md` |
+| `packages/<pkg>/skills/<name>/` | `.claude/skills/<username>/<pkg>/<name>/` |
+
+The username is determined from your git remote. If no remote exists, `local` is used.
+
+### Remote dependency sync
+
+Reads `agr.toml` and installs any missing dependencies:
 
 | Scenario | Action |
 |----------|--------|
 | Resource in agr.toml, not installed | Installs the resource |
 | Resource in agr.toml, already installed | Skips (no action) |
 | Resource installed, not in agr.toml | Keeps (unless `--prune`) |
-| `--prune` with unlisted resource | Removes namespaced resources only |
 
 ### Output
 
 ```
-Syncing resources from agr.toml...
-✓ Installed kasperjunge/hello-world (skill)
-• Skipped madsnorgaard/drupal-expert (already installed)
-✓ Pruned acme/old-resource
-
-Summary: 1 installed, 1 skipped, 1 pruned, 0 failed
+Installed local resource 'my-skill'
+Updated local resource 'my-command'
+Installed kasperjunge/hello-world (skill)
+Sync complete: 2 installed, 1 updated, 0 pruned
 ```
 
 !!! note
@@ -265,7 +302,23 @@ Use --type to specify which one to run:
 
 ## agr init
 
-Create scaffolds for repositories and resources.
+Create scaffolds for repositories and resources, or set up authoring structure.
+
+### Initialize authoring structure
+
+```bash
+agr init
+```
+
+Creates the convention directories for local resource authoring:
+
+```
+./
+├── skills/
+├── commands/
+├── agents/
+└── packages/
+```
 
 ### Create a repository
 
@@ -286,9 +339,12 @@ Options:
 agr init skill my-skill
 ```
 
+Creates `skills/my-skill/SKILL.md` by default.
+
 Options:
 
 - `--path`, `-p`: Custom output path
+- `--legacy`: Create in `.claude/skills/` instead of `skills/`
 
 ### Create a command
 
@@ -296,15 +352,33 @@ Options:
 agr init command my-command
 ```
 
+Creates `commands/my-command.md` by default.
+
 Options:
 
 - `--path`, `-p`: Custom output path
+- `--legacy`: Create in `.claude/commands/` instead of `commands/`
 
 ### Create an agent
 
 ```bash
 agr init agent my-agent
 ```
+
+Creates `agents/my-agent.md` by default.
+
+Options:
+
+- `--path`, `-p`: Custom output path
+- `--legacy`: Create in `.claude/agents/` instead of `agents/`
+
+### Create a package
+
+```bash
+agr init package my-toolkit
+```
+
+Creates `packages/my-toolkit/` with `skills/`, `commands/`, and `agents/` subdirectories.
 
 Options:
 
