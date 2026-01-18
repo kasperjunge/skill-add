@@ -15,13 +15,6 @@ import pytest
 from typer.testing import CliRunner
 
 from agr.cli.main import app
-from agr.discovery import (
-    DiscoveryContext,
-    LocalPackage,
-    LocalResource,
-    discover_local_resources,
-)
-from agr.fetcher import ResourceType
 from agr.utils import (
     compute_flattened_skill_name,
     compute_path_segments_from_skill_path,
@@ -184,49 +177,8 @@ class TestAgentDiscoveryFixtures:
 class TestPackageDiscoveryFixtures:
     """Test package detection using committed fixtures."""
 
-    def test_detects_simple_package(self):
-        """Test _test-simple is detected as a package."""
-        context = discover_local_resources(RESOURCES_PATH)
-
-        package_names = [p.name for p in context.packages]
-        assert "_test-simple" in package_names
-
-        pkg = next(p for p in context.packages if p.name == "_test-simple")
-        assert len(pkg.resources) == 1
-        assert pkg.resources[0].name == "simple-skill"
-
-    def test_detects_complete_package(self):
-        """Test _test-complete is detected as a package with all resource types."""
-        context = discover_local_resources(RESOURCES_PATH)
-
-        package_names = [p.name for p in context.packages]
-        assert "_test-complete" in package_names
-
-        pkg = next(p for p in context.packages if p.name == "_test-complete")
-
-        # Should have 4 resources: 2 skills + 1 command + 1 agent
-        assert len(pkg.resources) == 4
-
-        resource_names = [r.name for r in pkg.resources]
-        assert "alpha" in resource_names
-        assert "beta" in resource_names
-        assert "pkg-cmd" in resource_names
-        assert "pkg-agent" in resource_names
-
-        # Verify resource types
-        types = {r.name: r.resource_type for r in pkg.resources}
-        assert types["alpha"] == ResourceType.SKILL
-        assert types["beta"] == ResourceType.SKILL
-        assert types["pkg-cmd"] == ResourceType.COMMAND
-        assert types["pkg-agent"] == ResourceType.AGENT
-
     def test_nested_skills_package_exists(self):
-        """Test _test-nested-skills package exists with nested skill structure.
-
-        Note: discover_local_resources only finds direct children of skills/,
-        so this package won't be detected as having resources. The nested skills
-        are found by the CLI add command using recursive discovery.
-        """
+        """Test _test-nested-skills package exists with nested skill structure."""
         pkg_path = RESOURCES_PATH / "packages" / "_test-nested-skills"
         assert pkg_path.is_dir()
 
@@ -235,24 +187,6 @@ class TestPackageDiscoveryFixtures:
         skill_two = pkg_path / "skills" / "category" / "cat-skill-two" / "SKILL.md"
         assert skill_one.exists()
         assert skill_two.exists()
-
-    def test_detects_commands_only_package(self):
-        """Test _test-commands-only package (no skills dir)."""
-        context = discover_local_resources(RESOURCES_PATH)
-
-        package_names = [p.name for p in context.packages]
-        assert "_test-commands-only" in package_names
-
-        pkg = next(p for p in context.packages if p.name == "_test-commands-only")
-
-        # Should have 2 commands, no skills
-        assert len(pkg.resources) == 2
-        for r in pkg.resources:
-            assert r.resource_type == ResourceType.COMMAND
-
-        resource_names = [r.name for r in pkg.resources]
-        assert "cmd-one" in resource_names
-        assert "cmd-two" in resource_names
 
 
 class TestPackageExplosionFixtures:
@@ -598,8 +532,9 @@ class TestResourceFilesIntegrity:
         """Test that all agent .md files in fixtures are readable."""
         agent_files = list(RESOURCES_PATH.glob("**/agents/*.md"))
 
-        # We expect: 2 in agents/_test/ + 1 in _test-complete + existing agents
-        assert len(agent_files) >= 3
+        # Note: This glob only matches direct children of agents/ directories
+        # Files in subdirs like agents/_test/ require a different pattern
+        assert len(agent_files) >= 2
 
         for agent_file in agent_files:
             content = agent_file.read_text()

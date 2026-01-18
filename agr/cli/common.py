@@ -14,6 +14,7 @@ from agr.config import AgrConfig, Dependency, get_or_create_config
 from agr.exceptions import (
     AgrError,
     BundleNotFoundError,
+    ConfigParseError,
     MultipleResourcesFoundError,
     RepoNotFoundError,
     ResourceExistsError,
@@ -436,9 +437,8 @@ def _remove_from_agr_toml(
         if removed:
             config.save(config_path)
             console.print("[dim]Removed from agr.toml[/dim]")
-    except Exception:
-        # Don't fail the remove if agr.toml update fails
-        pass
+    except (ConfigParseError, ValueError, OSError) as e:
+        console.print(f"[yellow]Warning: Could not update agr.toml: {e}[/yellow]")
 
 
 def _find_namespaced_resource(
@@ -961,9 +961,8 @@ def _add_to_agr_toml(
         config.add_remote(resource_ref, type_str)
         config.save(config_path)
         console.print(f"[dim]Added to agr.toml[/dim]")
-    except Exception:
-        # Don't fail the install if agr.toml update fails
-        pass
+    except (ConfigParseError, ValueError, OSError) as e:
+        console.print(f"[yellow]Warning: Could not add to agr.toml: {e}[/yellow]")
 
 
 def handle_add_unified(
