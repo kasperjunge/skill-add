@@ -1,6 +1,7 @@
 
+agr and agrx should always be unified and synced.
 
-agr and agrx should always be unified.
+Always include in the plan to write tests for what is implemented
 
 
 Skills docs:
