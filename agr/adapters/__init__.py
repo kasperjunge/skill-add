@@ -13,11 +13,25 @@ Public exports:
 - DetectedTool: Dataclass for tool detection results
 - ClaudeAdapter: Adapter implementation for Claude Code
 - CursorAdapter: Adapter implementation for Cursor
+- ResourceConverter: Bidirectional format converter between tools
+- ConversionResult: Result of a format conversion
+- ConversionWarning: Warning generated during conversion
+- ToolConversionConfig: Configuration for tool format differences
+- TOOL_CONFIGS: Registry of tool configurations (extensible)
 """
 
 from agr.adapters.base import ToolFormat, ToolAdapter, InstalledResource, discover_md_resources
 from agr.adapters.registry import AdapterRegistry, AdapterNotFoundError
 from agr.adapters.detector import ToolDetector, DetectedTool
+from agr.adapters.converter import (
+    ResourceConverter,
+    ConversionResult,
+    ConversionWarning,
+    WarningLevel,
+    ToolConversionConfig,
+    TOOL_CONFIGS,
+    FIELD_MAPPINGS,
+)
 
 # Import adapters to trigger registration
 from agr.adapters.claude import ClaudeAdapter
@@ -38,4 +52,12 @@ __all__ = [
     # Adapters
     "ClaudeAdapter",
     "CursorAdapter",
+    # Converter
+    "ResourceConverter",
+    "ConversionResult",
+    "ConversionWarning",
+    "WarningLevel",
+    "ToolConversionConfig",
+    "TOOL_CONFIGS",
+    "FIELD_MAPPINGS",
 ]
