@@ -53,6 +53,7 @@ RESOURCE_TYPE_MAP: dict[str, tuple[ResourceType, str]] = {
     "skill": (ResourceType.SKILL, "skills"),
     "command": (ResourceType.COMMAND, "commands"),
     "agent": (ResourceType.AGENT, "agents"),
+    "rule": (ResourceType.RULE, "rules"),
 }
 
 
@@ -187,7 +188,7 @@ def _get_namespaced_resource_path(
     handle = ParsedHandle.from_components(username, name, path_segments)
 
     # Map resource_subdir to resource type
-    subdir_to_type = {"skills": "skill", "commands": "command", "agents": "agent"}
+    subdir_to_type = {"skills": "skill", "commands": "command", "agents": "agent", "rules": "rule"}
     resource_type = subdir_to_type.get(resource_subdir, "skill")
 
     return handle.to_resource_path(base_path, resource_type)
@@ -286,7 +287,7 @@ def _find_namespaced_resource(
                 if resource_path.is_dir() and (resource_path / "SKILL.md").exists():
                     return resource_path, item.name
     else:
-        # Commands and agents use nested format: username/name.md
+        # Commands, agents, and rules use nested format: username/name.md
         for username_dir in dest.iterdir():
             if username_dir.is_dir():
                 resource_path = username_dir / f"{name}.md"

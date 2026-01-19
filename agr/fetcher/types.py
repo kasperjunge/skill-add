@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
-from agr.constants import TOOL_DIR_NAME, SKILLS_SUBDIR, COMMANDS_SUBDIR, AGENTS_SUBDIR
+from agr.constants import TOOL_DIR_NAME, SKILLS_SUBDIR, COMMANDS_SUBDIR, AGENTS_SUBDIR, RULES_SUBDIR
 
 
 class ResourceType(Enum):
@@ -12,6 +12,7 @@ class ResourceType(Enum):
     SKILL = "skill"
     COMMAND = "command"
     AGENT = "agent"
+    RULE = "rule"
 
 
 @dataclass
@@ -44,6 +45,13 @@ RESOURCE_CONFIGS: dict[ResourceType, ResourceConfig] = {
         resource_type=ResourceType.AGENT,
         source_subdir=f"{TOOL_DIR_NAME}/{AGENTS_SUBDIR}",
         dest_subdir=AGENTS_SUBDIR,
+        is_directory=False,
+        file_extension=".md",
+    ),
+    ResourceType.RULE: ResourceConfig(
+        resource_type=ResourceType.RULE,
+        source_subdir=f"{TOOL_DIR_NAME}/{RULES_SUBDIR}",
+        dest_subdir=RULES_SUBDIR,
         is_directory=False,
         file_extension=".md",
     ),

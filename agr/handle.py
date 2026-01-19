@@ -143,23 +143,37 @@ class ParsedHandle:
             return base_path / "agents" / f"{self.simple_name}.md"
         return base_path / "agents" / self.username / f"{self.simple_name}.md"
 
+    def to_rule_path(self, base_path: Path) -> Path:
+        """Build rule path: base_path/rules/{username}/{name}.md or base_path/rules/{name}.md.
+
+        Examples:
+            >>> ParsedHandle(username="kasperjunge", name="no-console", path_segments=["no-console"]).to_rule_path(Path(".claude"))
+            PosixPath('.claude/rules/kasperjunge/no-console.md')
+            >>> ParsedHandle(name="no-console", path_segments=["no-console"]).to_rule_path(Path(".claude"))
+            PosixPath('.claude/rules/no-console.md')
+        """
+        if not self.username:
+            return base_path / "rules" / f"{self.simple_name}.md"
+        return base_path / "rules" / self.username / f"{self.simple_name}.md"
+
     def to_resource_path(self, base_path: Path, resource_type: str) -> Path:
-        """Build resource path based on type (skill, command, agent).
+        """Build resource path based on type (skill, command, agent, rule).
 
         Args:
             base_path: Base directory (e.g., Path(".claude"))
-            resource_type: One of "skill", "command", "agent"
+            resource_type: One of "skill", "command", "agent", "rule"
 
         Returns:
             Path to the resource
 
         Raises:
-            ValueError: If resource_type is not one of skill, command, agent
+            ValueError: If resource_type is not one of skill, command, agent, rule
         """
         builders = {
             "skill": self.to_skill_path,
             "command": self.to_command_path,
             "agent": self.to_agent_path,
+            "rule": self.to_rule_path,
         }
         if resource_type not in builders:
             raise ValueError(f"Unknown resource type: {resource_type}")

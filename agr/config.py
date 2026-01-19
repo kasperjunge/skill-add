@@ -11,7 +11,7 @@ from agr.exceptions import ConfigParseError
 
 
 # Valid resource types
-VALID_TYPES = {"skill", "command", "agent", "package"}
+VALID_TYPES = {"skill", "command", "agent", "rule", "package"}
 
 
 @dataclass

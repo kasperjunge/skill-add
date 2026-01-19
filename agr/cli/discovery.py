@@ -55,13 +55,15 @@ def _discover_in_namespace(
     """Discover resources in a specific username namespace.
 
     Skills use flattened colon format (e.g., "kasperjunge:seo").
-    Commands and agents use nested format (e.g., "username/name.md").
+    Commands, agents, and rules use nested format (e.g., "username/name.md").
     """
     handle = ParsedHandle.from_components(username, name)
 
-    # Check for skill (flattened colon format)
+    # Check for skill (flattened colon format or legacy nested)
     skill_path = handle.to_skill_path(base_path)
-    if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
+    legacy_skill_path = base_path / "skills" / username / name
+    if (skill_path.is_dir() and (skill_path / "SKILL.md").exists()) or \
+       (legacy_skill_path.is_dir() and (legacy_skill_path / "SKILL.md").exists()):
         result.resources.append(
             DiscoveredResource(
                 name=name,
@@ -70,42 +72,23 @@ def _discover_in_namespace(
                 username=username,
             )
         )
-    else:
-        # Fallback: check legacy nested format for backward compat
-        legacy_skill_path = base_path / "skills" / username / name
-        if legacy_skill_path.is_dir() and (legacy_skill_path / "SKILL.md").exists():
+
+    # Check file-based resources (command, agent, rule)
+    file_checks = [
+        (handle.to_command_path(base_path), ResourceType.COMMAND),
+        (handle.to_agent_path(base_path), ResourceType.AGENT),
+        (handle.to_rule_path(base_path), ResourceType.RULE),
+    ]
+    for path, resource_type in file_checks:
+        if path.is_file():
             result.resources.append(
                 DiscoveredResource(
                     name=name,
-                    resource_type=ResourceType.SKILL,
+                    resource_type=resource_type,
                     path_segments=[name],
                     username=username,
                 )
             )
-
-    # Check for command (nested format)
-    command_path = handle.to_command_path(base_path)
-    if command_path.is_file():
-        result.resources.append(
-            DiscoveredResource(
-                name=name,
-                resource_type=ResourceType.COMMAND,
-                path_segments=[name],
-                username=username,
-            )
-        )
-
-    # Check for agent (nested format)
-    agent_path = handle.to_agent_path(base_path)
-    if agent_path.is_file():
-        result.resources.append(
-            DiscoveredResource(
-                name=name,
-                resource_type=ResourceType.AGENT,
-                path_segments=[name],
-                username=username,
-            )
-        )
 
 
 def _discover_in_all_namespaces(
@@ -157,43 +140,31 @@ def _discover_in_all_namespaces(
                         )
                     )
 
-    # Check commands namespaces (nested format: username/name.md)
-    commands_dir = base_path / "commands"
-    if commands_dir.is_dir():
-        for username_dir in commands_dir.iterdir():
-            if username_dir.is_dir():
-                # Skip if looking for specific username and this doesn't match
-                if target_username and username_dir.name != target_username:
-                    continue
-                command_path = username_dir / f"{target_name}.md"
-                if command_path.is_file():
-                    result.resources.append(
-                        DiscoveredResource(
-                            name=target_name,
-                            resource_type=ResourceType.COMMAND,
-                            path_segments=[target_name],
-                            username=username_dir.name,
-                        )
+    # Check file-based resources (commands, agents, rules) using nested format
+    file_based_types = [
+        ("commands", ResourceType.COMMAND),
+        ("agents", ResourceType.AGENT),
+        ("rules", ResourceType.RULE),
+    ]
+    for subdir, resource_type in file_based_types:
+        resource_dir = base_path / subdir
+        if not resource_dir.is_dir():
+            continue
+        for username_dir in resource_dir.iterdir():
+            if not username_dir.is_dir():
+                continue
+            if target_username and username_dir.name != target_username:
+                continue
+            resource_path = username_dir / f"{target_name}.md"
+            if resource_path.is_file():
+                result.resources.append(
+                    DiscoveredResource(
+                        name=target_name,
+                        resource_type=resource_type,
+                        path_segments=[target_name],
+                        username=username_dir.name,
                     )
-
-    # Check agents namespaces (nested format: username/name.md)
-    agents_dir = base_path / "agents"
-    if agents_dir.is_dir():
-        for username_dir in agents_dir.iterdir():
-            if username_dir.is_dir():
-                # Skip if looking for specific username and this doesn't match
-                if target_username and username_dir.name != target_username:
-                    continue
-                agent_path = username_dir / f"{target_name}.md"
-                if agent_path.is_file():
-                    result.resources.append(
-                        DiscoveredResource(
-                            name=target_name,
-                            resource_type=ResourceType.AGENT,
-                            path_segments=[target_name],
-                            username=username_dir.name,
-                        )
-                    )
+                )
 
 
 def _discover_in_flat_path(
@@ -202,7 +173,6 @@ def _discover_in_flat_path(
     result: DiscoveryResult,
 ) -> None:
     """Discover resources in flat (non-namespaced) paths for backward compat."""
-    # Use ParsedHandle without username for flat paths
     handle = ParsedHandle(name=name, path_segments=[name])
 
     # Check for skill (directory with SKILL.md)
@@ -217,29 +187,22 @@ def _discover_in_flat_path(
             )
         )
 
-    # Check for command (markdown file)
-    command_path = handle.to_command_path(base_path)
-    if command_path.is_file():
-        result.resources.append(
-            DiscoveredResource(
-                name=name,
-                resource_type=ResourceType.COMMAND,
-                path_segments=[name],
-                username=None,
+    # Check file-based resources (command, agent, rule)
+    file_checks = [
+        (handle.to_command_path(base_path), ResourceType.COMMAND),
+        (handle.to_agent_path(base_path), ResourceType.AGENT),
+        (handle.to_rule_path(base_path), ResourceType.RULE),
+    ]
+    for path, resource_type in file_checks:
+        if path.is_file():
+            result.resources.append(
+                DiscoveredResource(
+                    name=name,
+                    resource_type=resource_type,
+                    path_segments=[name],
+                    username=None,
+                )
             )
-        )
-
-    # Check for agent (markdown file)
-    agent_path = handle.to_agent_path(base_path)
-    if agent_path.is_file():
-        result.resources.append(
-            DiscoveredResource(
-                name=name,
-                resource_type=ResourceType.AGENT,
-                path_segments=[name],
-                username=None,
-            )
-        )
 
 
 def discover_runnable_resource(

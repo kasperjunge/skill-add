@@ -20,12 +20,6 @@ def discover_resource_type_from_dir(
     """
     Search all resource directories to find matching resources.
 
-    Priority order for detection:
-    1. Skill (.claude/skills/{name}/SKILL.md or .claude/skills/{path}/SKILL.md)
-    2. Command (.claude/commands/{name}.md or .claude/commands/{path}.md)
-    3. Agent (.claude/agents/{name}.md or .claude/agents/{path}.md)
-    4. Bundle (.claude/*/name/ directories with resources)
-
     Args:
         repo_dir: Path to extracted repository
         name: Display name of the resource
@@ -50,35 +44,22 @@ def discover_resource_type_from_dir(
             )
         )
 
-    # Check for command (markdown file)
-    command_config = RESOURCE_CONFIGS[ResourceType.COMMAND]
-    command_path = _build_resource_path(
-        repo_dir / command_config.source_subdir, command_config, path_segments
-    )
-    if command_path.is_file():
-        result.resources.append(
-            DiscoveredResource(
-                name=name,
-                resource_type=ResourceType.COMMAND,
-                path_segments=path_segments,
-            )
+    # Check file-based resources (command, agent, rule)
+    for resource_type in [ResourceType.COMMAND, ResourceType.AGENT, ResourceType.RULE]:
+        config = RESOURCE_CONFIGS[resource_type]
+        resource_path = _build_resource_path(
+            repo_dir / config.source_subdir, config, path_segments
         )
-
-    # Check for agent (markdown file)
-    agent_config = RESOURCE_CONFIGS[ResourceType.AGENT]
-    agent_path = _build_resource_path(
-        repo_dir / agent_config.source_subdir, agent_config, path_segments
-    )
-    if agent_path.is_file():
-        result.resources.append(
-            DiscoveredResource(
-                name=name,
-                resource_type=ResourceType.AGENT,
-                path_segments=path_segments,
+        if resource_path.is_file():
+            result.resources.append(
+                DiscoveredResource(
+                    name=name,
+                    resource_type=resource_type,
+                    path_segments=path_segments,
+                )
             )
-        )
 
-    # Check for bundle (directory with resources in any of the three locations)
+    # Check for bundle
     bundle_name = path_segments[-1] if path_segments else name
     bundle_contents = discover_bundle_contents(repo_dir, bundle_name)
     if not bundle_contents.is_empty:

@@ -15,6 +15,7 @@ from agr.constants import (
     SKILLS_SUBDIR,
     COMMANDS_SUBDIR,
     AGENTS_SUBDIR,
+    RULES_SUBDIR,
     PACKAGES_SUBDIR,
 )
 
@@ -30,6 +31,7 @@ TYPE_TO_SUBDIR: dict[str, str] = {
     "skill": SKILLS_SUBDIR,
     "command": COMMANDS_SUBDIR,
     "agent": AGENTS_SUBDIR,
+    "rule": RULES_SUBDIR,
     "package": PACKAGES_SUBDIR,
 }
 
