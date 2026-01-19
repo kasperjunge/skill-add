@@ -142,21 +142,25 @@ class TestInteractiveMode:
     def test_interactive_mode_passes_dangerously_skip_permissions(
         self, mock_cleanup, mock_build_path, mock_fetch, mock_subprocess, mock_which, tmp_path
     ):
-        """Test that -i flag passes --dangerously-skip-permissions and --continue to Claude CLI."""
+        """Test that -i flag passes --dangerously-skip-permissions to Claude CLI and then continues."""
         # Setup mocks
         mock_build_path.return_value = tmp_path / "_agrx_hello-world.md"
 
         result = runner.invoke(app, ["--type", "skill", "-i", "testuser/hello-world"])
 
-        # Check subprocess.run was called with the correct args
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args[0][0]  # First positional arg is the command list
+        # Interactive mode calls subprocess twice: first to run skill, then to continue
+        assert mock_subprocess.call_count == 2
+        first_call_args = mock_subprocess.call_args_list[0][0][0]
+        second_call_args = mock_subprocess.call_args_list[1][0][0]
 
-        assert "claude" in call_args
-        assert "-p" in call_args
-        assert "/_agrx_hello-world" in call_args
-        assert "--dangerously-skip-permissions" in call_args
-        assert "--continue" in call_args
+        # First call runs the skill with --dangerously-skip-permissions
+        assert "claude" in first_call_args
+        assert "-p" in first_call_args
+        assert "/_agrx_hello-world" in first_call_args
+        assert "--dangerously-skip-permissions" in first_call_args
+
+        # Second call continues the conversation interactively
+        assert second_call_args == ["claude", "--continue"]
 
     @patch("agr.cli.run.shutil.which", return_value="/usr/bin/claude")
     @patch("agr.cli.run.subprocess.run")
@@ -171,12 +175,13 @@ class TestInteractiveMode:
 
         result = runner.invoke(app, ["--type", "skill", "-i", "testuser/hello-world", "my custom args"])
 
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args[0][0]
+        # Interactive mode calls subprocess twice
+        assert mock_subprocess.call_count == 2
+        first_call_args = mock_subprocess.call_args_list[0][0][0]
 
         # The prompt should include both the skill and the args
-        prompt_idx = call_args.index("-p") + 1
-        prompt_value = call_args[prompt_idx]
+        prompt_idx = first_call_args.index("-p") + 1
+        prompt_value = first_call_args[prompt_idx]
         assert "/_agrx_hello-world" in prompt_value
         assert "my custom args" in prompt_value
 
@@ -228,13 +233,18 @@ class TestInteractiveMode:
 
         result = runner.invoke(app, ["-i", "testuser/hello"])
 
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args[0][0]
+        # Interactive mode calls subprocess twice: first to run skill, then to continue
+        assert mock_subprocess.call_count == 2
+        first_call_args = mock_subprocess.call_args_list[0][0][0]
+        second_call_args = mock_subprocess.call_args_list[1][0][0]
 
-        assert "claude" in call_args
-        assert "-p" in call_args
-        assert "--dangerously-skip-permissions" in call_args
-        assert "--continue" in call_args
+        # First call runs the skill
+        assert "claude" in first_call_args
+        assert "-p" in first_call_args
+        assert "--dangerously-skip-permissions" in first_call_args
+
+        # Second call continues the conversation interactively
+        assert second_call_args == ["claude", "--continue"]
 
 
 class TestAutoDiscoveryFallback:

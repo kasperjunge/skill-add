@@ -9,9 +9,11 @@ import typer
 from agr.cli.paths import (
     DEFAULT_REPO_NAME,
     TYPE_TO_SUBDIR,
+    ExtractedArgs,
     cleanup_empty_parent,
     console,
     error_exit,
+    extract_flags_from_args,
     extract_type_from_args,
     find_repo_root,
     get_base_path,
@@ -89,11 +91,12 @@ class TestExtractTypeFromArgs:
     """Tests for extract_type_from_args utility."""
 
     def test_returns_explicit_type_when_provided(self):
-        """Test that explicit type takes precedence."""
+        """Test that explicit type takes precedence and flags are still cleaned."""
         args = ["my-skill", "--type", "command"]
         cleaned, resource_type = extract_type_from_args(args, "skill")
         assert resource_type == "skill"
-        assert cleaned == args
+        # Flags are cleaned from args even when explicit type is provided
+        assert cleaned == ["my-skill"]
 
     def test_extracts_type_from_args(self):
         """Test extraction of --type from args."""
@@ -134,6 +137,115 @@ class TestExtractTypeFromArgs:
         cleaned, resource_type = extract_type_from_args(args, None)
         assert resource_type == "skill"
         assert cleaned == ["my-skill"]
+
+
+class TestExtractFlagsFromArgs:
+    """Tests for extract_flags_from_args utility."""
+
+    def test_extracts_interactive_flag(self):
+        """Test extraction of --interactive from args."""
+        args = ["ref", "--interactive"]
+        result = extract_flags_from_args(args)
+        assert result.interactive is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_extracts_interactive_short_flag(self):
+        """Test extraction of -i from args."""
+        args = ["ref", "-i"]
+        result = extract_flags_from_args(args)
+        assert result.interactive is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_extracts_global_flag(self):
+        """Test extraction of --global from args."""
+        args = ["ref", "--global"]
+        result = extract_flags_from_args(args)
+        assert result.global_install is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_extracts_global_short_flag(self):
+        """Test extraction of -g from args."""
+        args = ["ref", "-g"]
+        result = extract_flags_from_args(args)
+        assert result.global_install is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_extracts_multiple_flags(self):
+        """Test extraction of multiple flags at once."""
+        args = ["ref", "--interactive", "--global"]
+        result = extract_flags_from_args(args)
+        assert result.interactive is True
+        assert result.global_install is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_extracts_flags_with_prompt(self):
+        """Test extraction with prompt argument."""
+        args = ["ref", "my prompt", "--interactive"]
+        result = extract_flags_from_args(args)
+        assert result.interactive is True
+        assert result.cleaned_args == ["ref", "my prompt"]
+
+    def test_extracts_type_and_boolean_flags(self):
+        """Test extraction of --type with --interactive."""
+        args = ["ref", "--type", "skill", "--interactive"]
+        result = extract_flags_from_args(args)
+        assert result.resource_type == "skill"
+        assert result.interactive is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_explicit_interactive_takes_precedence(self):
+        """Test that explicit interactive value takes precedence."""
+        args = ["ref", "--interactive"]
+        result = extract_flags_from_args(args, explicit_interactive=True)
+        assert result.interactive is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_explicit_global_takes_precedence(self):
+        """Test that explicit global value takes precedence."""
+        args = ["ref", "--global"]
+        result = extract_flags_from_args(args, explicit_global=True)
+        assert result.global_install is True
+        assert result.cleaned_args == ["ref"]
+
+    def test_explicit_type_takes_precedence(self):
+        """Test that explicit type value takes precedence."""
+        args = ["ref", "--type", "command"]
+        result = extract_flags_from_args(args, explicit_type="skill")
+        assert result.resource_type == "skill"
+        assert result.cleaned_args == ["ref"]
+
+    def test_handles_empty_args(self):
+        """Test handling of empty args."""
+        result = extract_flags_from_args([])
+        assert result.interactive is False
+        assert result.global_install is False
+        assert result.resource_type is None
+        assert result.cleaned_args == []
+
+    def test_handles_none_args(self):
+        """Test handling of None args."""
+        result = extract_flags_from_args(None)
+        assert result.interactive is False
+        assert result.global_install is False
+        assert result.resource_type is None
+        assert result.cleaned_args == []
+
+    def test_flags_at_different_positions(self):
+        """Test flags can appear at different positions."""
+        args = ["-i", "ref", "--global", "prompt"]
+        result = extract_flags_from_args(args)
+        assert result.interactive is True
+        assert result.global_install is True
+        assert result.cleaned_args == ["ref", "prompt"]
+
+    def test_all_flags_combined(self):
+        """Test all flags combined."""
+        args = ["ref", "-t", "skill", "-i", "-g"]
+        result = extract_flags_from_args(args)
+        assert result.resource_type == "skill"
+        assert result.interactive is True
+        assert result.global_install is True
+        assert result.cleaned_args == ["ref"]
 
 
 class TestParseNestedName:

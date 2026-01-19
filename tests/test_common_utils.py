@@ -87,11 +87,12 @@ class TestExtractTypeFromArgs:
     """Tests for extract_type_from_args utility."""
 
     def test_returns_explicit_type_when_provided(self):
-        """Test that explicit type takes precedence."""
+        """Test that explicit type takes precedence and flags are still cleaned."""
         args = ["my-skill", "--type", "command"]
         cleaned, resource_type = extract_type_from_args(args, "skill")
         assert resource_type == "skill"
-        assert cleaned == args  # Args unchanged when explicit_type provided
+        # Flags are cleaned from args even when explicit type is provided
+        assert cleaned == ["my-skill"]
 
     def test_extracts_type_from_args(self):
         """Test extraction of --type from args."""

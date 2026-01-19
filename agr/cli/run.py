@@ -14,7 +14,7 @@ from agr.cli.common import (
     console,
     discover_runnable_resource,
     error_exit,
-    extract_type_from_args,
+    extract_flags_from_args,
     fetch_spinner,
     get_destination,
     parse_resource_ref,
@@ -132,11 +132,13 @@ def _run_resource(
             claude_prompt += f" {prompt_or_args}"
 
         if interactive:
-            # Start interactive Claude session with skill auto-invoked
+            # Run the skill first, then continue in interactive mode
             subprocess.run([
-                "claude", "-p", claude_prompt,
-                "--dangerously-skip-permissions", "--continue"
+                "claude", "-p", claude_prompt, "--dangerously-skip-permissions"
             ], check=False)
+            # Continue the conversation interactively
+            console.print("[dim]Continuing in interactive mode...[/dim]")
+            subprocess.run(["claude", "--continue"], check=False)
         else:
             subprocess.run(["claude", "-p", claude_prompt], check=False)
 
@@ -272,11 +274,13 @@ def _run_resource_unified(
                 claude_prompt += f" {prompt_or_args}"
 
             if interactive:
-                # Start interactive Claude session with skill auto-invoked
+                # Run the skill first, then continue in interactive mode
                 subprocess.run([
-                    "claude", "-p", claude_prompt,
-                    "--dangerously-skip-permissions", "--continue"
+                    "claude", "-p", claude_prompt, "--dangerously-skip-permissions"
                 ], check=False)
+                # Continue the conversation interactively
+                console.print("[dim]Continuing in interactive mode...[/dim]")
+                subprocess.run(["claude", "--continue"], check=False)
             else:
                 subprocess.run(["claude", "-p", claude_prompt], check=False)
         finally:
@@ -332,22 +336,25 @@ def run_unified(
       agrx kasperjunge/my-repo/hello-world --type skill
       agrx kasperjunge/hello-world --interactive
     """
-    # Extract --type/-t from args if it was captured there (happens when type comes after ref)
-    cleaned_args, resource_type = extract_type_from_args(args, resource_type)
+    # Extract flags from args if they were captured there (happens when flags come after ref)
+    extracted = extract_flags_from_args(args, resource_type, interactive, global_install)
+    resource_type = extracted.resource_type
+    interactive = extracted.interactive
+    global_install = extracted.global_install
 
-    if not cleaned_args:
+    if not extracted.cleaned_args:
         console.print(ctx.get_help())
         raise typer.Exit(0)
 
-    first_arg = cleaned_args[0]
+    first_arg = extracted.cleaned_args[0]
 
     # Handle deprecated subcommand syntax: agrx skill <ref>
     if first_arg in DEPRECATED_SUBCOMMANDS:
-        if len(cleaned_args) < 2:
+        if len(extracted.cleaned_args) < 2:
             error_exit(f"Missing resource reference after '{first_arg}'.")
 
-        resource_ref = cleaned_args[1]
-        prompt_or_args = cleaned_args[2] if len(cleaned_args) > 2 else None
+        resource_ref = extracted.cleaned_args[1]
+        prompt_or_args = extracted.cleaned_args[2] if len(extracted.cleaned_args) > 2 else None
         console.print(
             f"[yellow]Warning: 'agrx {first_arg}' is deprecated. "
             f"Use 'agrx {resource_ref}' instead.[/yellow]"
@@ -361,7 +368,7 @@ def run_unified(
 
     # Normal unified run: agrx <ref> [prompt]
     resource_ref = first_arg
-    prompt_or_args = cleaned_args[1] if len(cleaned_args) > 1 else None
+    prompt_or_args = extracted.cleaned_args[1] if len(extracted.cleaned_args) > 1 else None
     _run_resource_unified(resource_ref, prompt_or_args, interactive, global_install, resource_type)
 
 

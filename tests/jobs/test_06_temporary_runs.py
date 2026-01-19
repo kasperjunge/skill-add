@@ -213,11 +213,12 @@ class TestAgrxInteractiveFlag:
 
         result = runner.invoke(app, ["--type", "skill", "--interactive", "testuser/hello"])
 
-        # Should have called subprocess with --dangerously-skip-permissions
-        mock_subprocess.assert_called()
-        call_args = mock_subprocess.call_args[0][0]
-        assert "--dangerously-skip-permissions" in call_args
-        assert "--continue" in call_args
+        # Interactive mode calls subprocess twice: first to run skill, then to continue
+        assert mock_subprocess.call_count == 2
+        first_call_args = mock_subprocess.call_args_list[0][0][0]
+        second_call_args = mock_subprocess.call_args_list[1][0][0]
+        assert "--dangerously-skip-permissions" in first_call_args
+        assert second_call_args == ["claude", "--continue"]
 
     @patch("agr.cli.run.shutil.which", return_value="/usr/bin/claude")
     @patch("agr.cli.run.subprocess.run")
@@ -233,9 +234,10 @@ class TestAgrxInteractiveFlag:
 
         result = runner.invoke(app, ["--type", "skill", "-i", "testuser/hello"])
 
-        mock_subprocess.assert_called()
-        call_args = mock_subprocess.call_args[0][0]
-        assert "--dangerously-skip-permissions" in call_args
+        # Interactive mode calls subprocess twice
+        assert mock_subprocess.call_count == 2
+        first_call_args = mock_subprocess.call_args_list[0][0][0]
+        assert "--dangerously-skip-permissions" in first_call_args
 
 
 class TestAgrxWithoutClaude:

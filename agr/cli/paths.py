@@ -2,6 +2,7 @@
 
 import shutil
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
@@ -62,10 +63,79 @@ def is_local_path(ref: str) -> bool:
     return ref.startswith(("./", "/", "../"))
 
 
+@dataclass
+class ExtractedArgs:
+    """Result of extracting known flags from args list."""
+
+    cleaned_args: list[str]
+    resource_type: str | None
+    interactive: bool
+    global_install: bool
+
+
+def extract_flags_from_args(
+    args: list[str] | None,
+    explicit_type: str | None = None,
+    explicit_interactive: bool = False,
+    explicit_global: bool = False,
+) -> ExtractedArgs:
+    """Extract known flags from args list when they appear after positional args.
+
+    When flags like --type, --interactive, or --global appear after the resource
+    reference, Typer captures them as part of the variadic args list. This function
+    extracts them.
+
+    Args:
+        args: The argument list (may contain flags)
+        explicit_type: The resource_type value from Typer (takes precedence if set)
+        explicit_interactive: The interactive value from Typer (takes precedence if True)
+        explicit_global: The global_install value from Typer (takes precedence if True)
+
+    Returns:
+        ExtractedArgs with cleaned_args and extracted flag values
+    """
+    result = ExtractedArgs(
+        cleaned_args=[],
+        resource_type=explicit_type,
+        interactive=explicit_interactive,
+        global_install=explicit_global,
+    )
+
+    if not args:
+        return result
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+
+        # Handle --type/-t (takes a value)
+        if arg in ("--type", "-t") and i + 1 < len(args):
+            if explicit_type is None:
+                result.resource_type = args[i + 1]
+            i += 2  # Skip both flag and value
+        # Handle --interactive/-i (boolean flag)
+        elif arg in ("--interactive", "-i"):
+            if not explicit_interactive:
+                result.interactive = True
+            i += 1
+        # Handle --global/-g (boolean flag)
+        elif arg in ("--global", "-g"):
+            if not explicit_global:
+                result.global_install = True
+            i += 1
+        else:
+            result.cleaned_args.append(arg)
+            i += 1
+
+    return result
+
+
 def extract_type_from_args(
     args: list[str] | None, explicit_type: str | None
 ) -> tuple[list[str], str | None]:
     """Extract --type/-t option from args list if present.
+
+    DEPRECATED: Use extract_flags_from_args() instead.
 
     When --type or -t appears after the resource reference, Typer captures it
     as part of the variadic args list. This function extracts it.
@@ -77,21 +147,8 @@ def extract_type_from_args(
     Returns:
         Tuple of (cleaned_args, resource_type)
     """
-    if not args or explicit_type is not None:
-        return args or [], explicit_type
-
-    cleaned_args = []
-    resource_type = None
-    i = 0
-    while i < len(args):
-        if args[i] in ("--type", "-t") and i + 1 < len(args):
-            resource_type = args[i + 1]
-            i += 2  # Skip both --type and its value
-        else:
-            cleaned_args.append(args[i])
-            i += 1
-
-    return cleaned_args, resource_type
+    result = extract_flags_from_args(args, explicit_type)
+    return result.cleaned_args, result.resource_type
 
 
 def parse_nested_name(name: str) -> tuple[str, list[str]]:
