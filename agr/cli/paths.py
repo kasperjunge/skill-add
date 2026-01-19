@@ -3,11 +3,20 @@
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
+
+from agr.constants import (
+    TOOL_DIR_NAME,
+    SKILLS_SUBDIR,
+    COMMANDS_SUBDIR,
+    AGENTS_SUBDIR,
+    PACKAGES_SUBDIR,
+)
 
 
 # Shared console instance for all CLI modules
@@ -18,10 +27,10 @@ DEFAULT_REPO_NAME = "agent-resources"
 
 # Shared mapping from resource type string to subdirectory
 TYPE_TO_SUBDIR: dict[str, str] = {
-    "skill": "skills",
-    "command": "commands",
-    "agent": "agents",
-    "package": "packages",
+    "skill": SKILLS_SUBDIR,
+    "command": COMMANDS_SUBDIR,
+    "agent": AGENTS_SUBDIR,
+    "package": PACKAGES_SUBDIR,
 }
 
 
@@ -166,8 +175,8 @@ def parse_resource_ref(ref: str) -> tuple[str, str, str, list[str]]:
 def get_base_path(global_install: bool) -> Path:
     """Get the base .claude directory path."""
     if global_install:
-        return Path.home() / ".claude"
-    return Path.cwd() / ".claude"
+        return Path.home() / TOOL_DIR_NAME
+    return Path.cwd() / TOOL_DIR_NAME
 
 
 def get_destination(resource_subdir: str, global_install: bool) -> Path:
@@ -232,3 +241,26 @@ def remove_path(path: Path) -> None:
     else:
         return
     cleanup_empty_parent(path)
+
+
+def error_exit(message: str, code: int = 1) -> NoReturn:
+    """Print error message and exit with error code.
+
+    Args:
+        message: The error message to display
+        code: Exit code (default: 1)
+
+    Raises:
+        typer.Exit: Always raises with the specified exit code
+    """
+    console.print(f"[red]Error: {message}[/red]")
+    raise typer.Exit(code)
+
+
+def warn(message: str) -> None:
+    """Print warning message.
+
+    Args:
+        message: The warning message to display
+    """
+    console.print(f"[yellow]Warning: {message}[/yellow]")

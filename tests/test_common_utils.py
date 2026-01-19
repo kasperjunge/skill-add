@@ -10,13 +10,13 @@ import pytest
 
 from agr.cli.common import (
     TYPE_TO_SUBDIR,
-    _add_to_agr_toml,
-    _remove_from_agr_toml,
     console,
     extract_type_from_args,
     find_repo_root,
     is_local_path,
 )
+# Import private functions directly from handlers module for testing
+from agr.cli.handlers import _add_to_agr_toml, _remove_from_agr_toml
 from agr.exceptions import ConfigParseError
 from agr.fetcher import ResourceType
 

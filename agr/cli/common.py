@@ -16,15 +16,14 @@ from agr.cli.paths import (
     fetch_spinner,
     cleanup_empty_parent,
     remove_path,
+    error_exit,
+    warn,
 )
 
 # Re-export from discovery module
 from agr.cli.discovery import (
     discover_local_resource_type,
     discover_runnable_resource,
-    _discover_in_namespace,
-    _discover_in_all_namespaces,
-    _discover_in_flat_path,
 )
 
 # Re-export from handlers module
@@ -32,17 +31,12 @@ from agr.cli.handlers import (
     print_success_message,
     handle_add_resource,
     get_local_resource_path,
-    _get_namespaced_resource_path,
-    _remove_from_agr_toml,
-    _find_namespaced_resource,
     handle_remove_resource,
     print_installed_resources,
     print_bundle_success_message,
     print_bundle_remove_message,
     handle_add_bundle,
     handle_remove_bundle,
-    _build_dependency_ref,
-    _add_to_agr_toml,
     handle_add_unified,
     handle_remove_unified,
 )
@@ -64,27 +58,21 @@ __all__ = [
     "fetch_spinner",
     "cleanup_empty_parent",
     "remove_path",
+    "error_exit",
+    "warn",
     # discovery
     "discover_local_resource_type",
     "discover_runnable_resource",
-    "_discover_in_namespace",
-    "_discover_in_all_namespaces",
-    "_discover_in_flat_path",
     # handlers
     "print_success_message",
     "handle_add_resource",
     "get_local_resource_path",
-    "_get_namespaced_resource_path",
-    "_remove_from_agr_toml",
-    "_find_namespaced_resource",
     "handle_remove_resource",
     "print_installed_resources",
     "print_bundle_success_message",
     "print_bundle_remove_message",
     "handle_add_bundle",
     "handle_remove_bundle",
-    "_build_dependency_ref",
-    "_add_to_agr_toml",
     "handle_add_unified",
     "handle_remove_unified",
 ]

@@ -9,6 +9,7 @@ import typer
 from agr.cli.common import (
     TYPE_TO_SUBDIR,
     console,
+    error_exit,
     extract_type_from_args,
     find_repo_root,
     get_base_path,
@@ -42,16 +43,14 @@ def handle_remove_local(
     # Find and load config
     config_path = find_config()
     if not config_path:
-        console.print("[red]Error: No agr.toml found[/red]")
-        raise typer.Exit(1)
+        error_exit("No agr.toml found")
 
     config = AgrConfig.load(config_path)
 
     # Check if path is in config
     dep = config.get_by_path(local_path)
     if not dep:
-        console.print(f"[red]Error: Path '{local_path}' not found in agr.toml[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Path '{local_path}' not found in agr.toml")
 
     # Get username for finding installed resource
     repo_root = find_repo_root()
@@ -153,8 +152,7 @@ def remove_unified(
     # Handle deprecated subcommand syntax: agr remove skill <name>
     if first_arg in DEPRECATED_SUBCOMMANDS:
         if len(cleaned_args) < 2:
-            console.print(f"[red]Error: Missing resource name after '{first_arg}'.[/red]")
-            raise typer.Exit(1)
+            error_exit(f"Missing resource name after '{first_arg}'.")
 
         name = cleaned_args[1]
         if first_arg == "bundle":

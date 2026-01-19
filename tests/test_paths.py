@@ -11,6 +11,7 @@ from agr.cli.paths import (
     TYPE_TO_SUBDIR,
     cleanup_empty_parent,
     console,
+    error_exit,
     extract_type_from_args,
     find_repo_root,
     get_base_path,
@@ -20,6 +21,7 @@ from agr.cli.paths import (
     parse_nested_name,
     parse_resource_ref,
     remove_path,
+    warn,
 )
 
 
@@ -406,3 +408,39 @@ class TestRemovePath:
         nonexistent = tmp_path / "does_not_exist.txt"
         # Should not raise an error
         remove_path(nonexistent)
+
+
+class TestErrorExit:
+    """Tests for error_exit utility."""
+
+    def test_raises_typer_exit(self):
+        """Test that error_exit raises typer.Exit."""
+        with pytest.raises(typer.Exit) as exc_info:
+            error_exit("test error message")
+        assert exc_info.value.exit_code == 1
+
+    def test_custom_exit_code(self):
+        """Test that custom exit code is used."""
+        with pytest.raises(typer.Exit) as exc_info:
+            error_exit("test error message", code=2)
+        assert exc_info.value.exit_code == 2
+
+    def test_exit_code_zero(self):
+        """Test that exit code 0 works."""
+        with pytest.raises(typer.Exit) as exc_info:
+            error_exit("not an error", code=0)
+        assert exc_info.value.exit_code == 0
+
+
+class TestWarn:
+    """Tests for warn utility."""
+
+    def test_does_not_raise(self):
+        """Test that warn does not raise an exception."""
+        # Should not raise any exception
+        warn("test warning message")
+
+    def test_returns_none(self):
+        """Test that warn returns None."""
+        result = warn("test warning message")
+        assert result is None

@@ -10,6 +10,7 @@ import typer
 from agr.cli.common import (
     TYPE_TO_SUBDIR,
     console,
+    error_exit,
     find_repo_root,
     get_base_path,
     handle_add_bundle,
@@ -326,8 +327,7 @@ def handle_add_local(
     path = Path(local_path)
 
     if not path.exists():
-        console.print(f"[red]Error: Path does not exist: {path}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Path does not exist: {path}")
 
     # Detect type first to handle namespaces properly
     if not resource_type:
@@ -347,11 +347,10 @@ def handle_add_local(
             return
 
     if not resource_type:
-        console.print(
-            f"[red]Error: Could not detect resource type for '{path}'.[/red]\n"
+        error_exit(
+            f"Could not detect resource type for '{path}'.\n"
             "Use --type to specify: skill, command, agent, or package"
         )
-        raise typer.Exit(1)
 
     # Validate that packages are not empty
     if resource_type == "package":
@@ -362,9 +361,10 @@ def handle_add_local(
             any((pkg_path / "agents").glob("*.md")) if (pkg_path / "agents").is_dir() else False,
         ])
         if not has_resources:
-            console.print(f"[red]Error: Package '{pkg_path.name}' contains no resources.[/red]")
-            console.print("[dim]Add skills, commands, or agents to the package first.[/dim]")
-            raise typer.Exit(1)
+            error_exit(
+                f"Package '{pkg_path.name}' contains no resources.\n"
+                "Add skills, commands, or agents to the package first."
+            )
 
     name = path.stem if path.is_file() else path.name
 
@@ -485,15 +485,13 @@ def handle_add_glob(
     matches = list(glob.glob(pattern, recursive=True))
 
     if not matches:
-        console.print(f"[red]Error: No files match pattern: {pattern}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"No files match pattern: {pattern}")
 
     # Filter to only existing files/dirs
     paths = [Path(m) for m in matches if Path(m).exists()]
 
     if not paths:
-        console.print(f"[red]Error: No valid paths match pattern: {pattern}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"No valid paths match pattern: {pattern}")
 
     console.print(f"Found {len(paths)} matching path(s)")
 
@@ -653,8 +651,7 @@ def _handle_deprecated_add(
 ) -> None:
     """Handle deprecated agr add <type> <ref> syntax."""
     if len(args) < 2:
-        console.print(f"[red]Error: Missing resource reference after '{subcommand}'.[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Missing resource reference after '{subcommand}'.")
 
     resource_ref = args[1]
     console.print(

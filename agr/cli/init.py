@@ -5,7 +5,8 @@ from typing import Annotated
 
 import typer
 
-from agr.cli.common import console
+from agr.cli.common import console, error_exit
+from agr.constants import TOOL_DIR_NAME
 
 app = typer.Typer(
     help="Create new agent resources or repositories.",
@@ -78,7 +79,7 @@ def _get_resource_target_path(
     if custom_path:
         return custom_path
     if legacy:
-        base = Path.cwd() / ".claude" / resource_type
+        base = Path.cwd() / TOOL_DIR_NAME / resource_type
     else:
         base = Path.cwd() / RESOURCES_ROOT / resource_type
 
@@ -165,8 +166,7 @@ def init_skill(
     skill_file = target_path / "SKILL.md"
 
     if skill_file.exists():
-        console.print(f"[red]Error: Skill already exists at {skill_file}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Skill already exists at {skill_file}")
 
     target_path.mkdir(parents=True, exist_ok=True)
 
@@ -240,8 +240,7 @@ def init_command(
     command_file = target_path / f"{name}.md"
 
     if command_file.exists():
-        console.print(f"[red]Error: Command already exists at {command_file}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Command already exists at {command_file}")
 
     target_path.mkdir(parents=True, exist_ok=True)
 
@@ -310,8 +309,7 @@ def init_agent(
     agent_file = target_path / f"{name}.md"
 
     if agent_file.exists():
-        console.print(f"[red]Error: Agent already exists at {agent_file}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Agent already exists at {agent_file}")
 
     target_path.mkdir(parents=True, exist_ok=True)
 
@@ -375,8 +373,7 @@ def init_package(
     target_path = path or (Path.cwd() / RESOURCES_ROOT / "packages" / name)
 
     if target_path.exists():
-        console.print(f"[red]Error: Package directory already exists at {target_path}[/red]")
-        raise typer.Exit(1)
+        error_exit(f"Package directory already exists at {target_path}")
 
     # Create package structure
     target_path.mkdir(parents=True, exist_ok=True)

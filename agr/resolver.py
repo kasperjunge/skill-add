@@ -13,6 +13,7 @@ from pathlib import Path
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
+from agr.constants import TOOL_DIR_NAME, SKILLS_SUBDIR, COMMANDS_SUBDIR, AGENTS_SUBDIR
 from agr.fetcher import ResourceType
 
 
@@ -233,41 +234,41 @@ def _resolve_from_claude_dir(repo_dir: Path, name: str) -> ResolvedResource | No
     Returns:
         ResolvedResource if found in .claude/, None otherwise
     """
-    claude_dir = repo_dir / ".claude"
+    claude_dir = repo_dir / TOOL_DIR_NAME
 
     # Check for skill
-    skill_path = claude_dir / "skills" / name
+    skill_path = claude_dir / SKILLS_SUBDIR / name
     if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.SKILL,
-            path=Path(".claude/skills") / name,
+            path=Path(TOOL_DIR_NAME) / SKILLS_SUBDIR / name,
             source=ResourceSource.CLAUDE_DIR,
         )
 
     # Check for command
-    command_path = claude_dir / "commands" / f"{name}.md"
+    command_path = claude_dir / COMMANDS_SUBDIR / f"{name}.md"
     if command_path.is_file():
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.COMMAND,
-            path=Path(".claude/commands") / f"{name}.md",
+            path=Path(TOOL_DIR_NAME) / COMMANDS_SUBDIR / f"{name}.md",
             source=ResourceSource.CLAUDE_DIR,
         )
 
     # Check for agent
-    agent_path = claude_dir / "agents" / f"{name}.md"
+    agent_path = claude_dir / AGENTS_SUBDIR / f"{name}.md"
     if agent_path.is_file():
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.AGENT,
-            path=Path(".claude/agents") / f"{name}.md",
+            path=Path(TOOL_DIR_NAME) / AGENTS_SUBDIR / f"{name}.md",
             source=ResourceSource.CLAUDE_DIR,
         )
 
     # Check for bundle (directory with nested resources)
     # A bundle exists if there are subdirectories with resources in skills/
-    bundle_skills_path = claude_dir / "skills" / name
+    bundle_skills_path = claude_dir / SKILLS_SUBDIR / name
     if bundle_skills_path.is_dir():
         # Check if any subdirectory has SKILL.md (making it a bundle)
         for subdir in bundle_skills_path.iterdir():
@@ -275,13 +276,13 @@ def _resolve_from_claude_dir(repo_dir: Path, name: str) -> ResolvedResource | No
                 return ResolvedResource(
                     name=name,
                     resource_type=None,  # Bundles don't have a single type
-                    path=Path(".claude/skills") / name,
+                    path=Path(TOOL_DIR_NAME) / SKILLS_SUBDIR / name,
                     source=ResourceSource.CLAUDE_DIR,
                     is_package=True,
                 )
 
     # Check for bundle in commands/
-    bundle_commands_path = claude_dir / "commands" / name
+    bundle_commands_path = claude_dir / COMMANDS_SUBDIR / name
     if bundle_commands_path.is_dir():
         # Check if directory contains .md files
         md_files = list(bundle_commands_path.glob("*.md"))
@@ -289,20 +290,20 @@ def _resolve_from_claude_dir(repo_dir: Path, name: str) -> ResolvedResource | No
             return ResolvedResource(
                 name=name,
                 resource_type=None,
-                path=Path(".claude/commands") / name,
+                path=Path(TOOL_DIR_NAME) / COMMANDS_SUBDIR / name,
                 source=ResourceSource.CLAUDE_DIR,
                 is_package=True,
             )
 
     # Check for bundle in agents/
-    bundle_agents_path = claude_dir / "agents" / name
+    bundle_agents_path = claude_dir / AGENTS_SUBDIR / name
     if bundle_agents_path.is_dir():
         md_files = list(bundle_agents_path.glob("*.md"))
         if md_files:
             return ResolvedResource(
                 name=name,
                 resource_type=None,
-                path=Path(".claude/agents") / name,
+                path=Path(TOOL_DIR_NAME) / AGENTS_SUBDIR / name,
                 source=ResourceSource.CLAUDE_DIR,
                 is_package=True,
             )
@@ -356,7 +357,7 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
     for skill_md in repo_dir.rglob(search_pattern):
         # Skip .claude/ directory (already handled in fallback 2)
         rel_path = skill_md.parent.relative_to(repo_dir)
-        if str(rel_path).startswith(".claude"):
+        if str(rel_path).startswith(TOOL_DIR_NAME):
             continue
         return ResolvedResource(
             name=name,
@@ -368,14 +369,14 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
     # 3. Check for command in commands/ directory
     # Build path: commands/{path_segments[:-1]}/{simple_name}.md
     if len(path_segments) > 1:
-        cmd_rel_path = Path("commands", *path_segments[:-1], f"{simple_name}.md")
+        cmd_rel_path = Path(COMMANDS_SUBDIR, *path_segments[:-1], f"{simple_name}.md")
     else:
-        cmd_rel_path = Path("commands", f"{simple_name}.md")
+        cmd_rel_path = Path(COMMANDS_SUBDIR, f"{simple_name}.md")
 
     for cmd_path in repo_dir.rglob(str(cmd_rel_path)):
         rel_path = cmd_path.relative_to(repo_dir)
         # Skip .claude/ directory
-        if str(rel_path).startswith(".claude"):
+        if str(rel_path).startswith(TOOL_DIR_NAME):
             continue
         return ResolvedResource(
             name=name,
@@ -386,14 +387,14 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
 
     # 4. Check for agent in agents/ directory
     if len(path_segments) > 1:
-        agent_rel_path = Path("agents", *path_segments[:-1], f"{simple_name}.md")
+        agent_rel_path = Path(AGENTS_SUBDIR, *path_segments[:-1], f"{simple_name}.md")
     else:
-        agent_rel_path = Path("agents", f"{simple_name}.md")
+        agent_rel_path = Path(AGENTS_SUBDIR, f"{simple_name}.md")
 
     for agent_path in repo_dir.rglob(str(agent_rel_path)):
         rel_path = agent_path.relative_to(repo_dir)
         # Skip .claude/ directory
-        if str(rel_path).startswith(".claude"):
+        if str(rel_path).startswith(TOOL_DIR_NAME):
             continue
         return ResolvedResource(
             name=name,

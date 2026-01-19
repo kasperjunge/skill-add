@@ -13,6 +13,7 @@ from agr.cli.common import (
     DEFAULT_REPO_NAME,
     console,
     discover_runnable_resource,
+    error_exit,
     extract_type_from_args,
     fetch_spinner,
     get_destination,
@@ -36,9 +37,7 @@ AGRX_PREFIX = "_agrx_"  # Prefix for temporary resources to avoid conflicts
 def _check_claude_cli() -> None:
     """Check if Claude CLI is installed."""
     if shutil.which("claude") is None:
-        console.print("[red]Error: Claude CLI not found.[/red]")
-        console.print("Install it from: https://claude.ai/download")
-        raise typer.Exit(1)
+        error_exit("Claude CLI not found. Install it from: https://claude.ai/download")
 
 
 def _cleanup_resource(local_path: Path) -> None:
@@ -80,8 +79,7 @@ def _run_resource(
     try:
         username, repo_name, name, path_segments = parse_resource_ref(ref)
     except typer.BadParameter as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        error_exit(str(e))
 
     config = RESOURCE_CONFIGS[resource_type]
     resource_name = path_segments[-1]
@@ -143,8 +141,7 @@ def _run_resource(
             subprocess.run(["claude", "-p", claude_prompt], check=False)
 
     except AgrError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        error_exit(str(e))
     finally:
         # Restore original signal handlers
         signal.signal(signal.SIGINT, original_sigint)
@@ -177,8 +174,7 @@ def _run_resource_unified(
     try:
         username, repo_name, name, path_segments = parse_resource_ref(ref)
     except typer.BadParameter as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        error_exit(str(e))
 
     # If explicit type provided, use existing handler
     if resource_type:
@@ -190,8 +186,7 @@ def _run_resource_unified(
             _run_resource(ref, ResourceType.COMMAND, prompt_or_args, interactive, global_install)
             return
         else:
-            console.print(f"[red]Error: Unknown resource type '{resource_type}'. Use: skill or command.[/red]")
-            raise typer.Exit(1)
+            error_exit(f"Unknown resource type '{resource_type}'. Use: skill or command.")
 
     # Auto-detect type by downloading repo
     try:
@@ -214,11 +209,10 @@ def _run_resource_unified(
                     discovery = discover_runnable_resource(repo_dir, name, path_segments)
 
                     if discovery.is_empty:
-                        console.print(
-                            f"[red]Error: Resource '{name}' not found in {username}/{repo_name}.[/red]\n"
-                            f"Searched in: agr.toml, skills, commands, and repo root.",
+                        error_exit(
+                            f"Resource '{name}' not found in {username}/{repo_name}.\n"
+                            f"Searched in: agr.toml, skills, commands, and repo root."
                         )
-                        raise typer.Exit(1)
 
                     if discovery.is_ambiguous:
                         # Build helpful example commands for each type found
@@ -226,11 +220,10 @@ def _run_resource_unified(
                         examples = "\n".join(
                             f"  agrx {ref} --type {t}" for t in discovery.found_types
                         )
-                        console.print(
-                            f"[red]Error: Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.[/red]\n"
-                            f"Use --type to specify which one to run:\n{examples}",
+                        error_exit(
+                            f"Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
+                            f"Use --type to specify which one to run:\n{examples}"
                         )
-                        raise typer.Exit(1)
 
                     detected_type = discovery.resources[0].resource_type
 
@@ -293,8 +286,7 @@ def _run_resource_unified(
                 _cleanup_resource(local_path)
 
     except AgrError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        error_exit(str(e))
 
 
 @app.callback(invoke_without_command=True)
@@ -352,8 +344,7 @@ def run_unified(
     # Handle deprecated subcommand syntax: agrx skill <ref>
     if first_arg in DEPRECATED_SUBCOMMANDS:
         if len(cleaned_args) < 2:
-            console.print(f"[red]Error: Missing resource reference after '{first_arg}'.[/red]")
-            raise typer.Exit(1)
+            error_exit(f"Missing resource reference after '{first_arg}'.")
 
         resource_ref = cleaned_args[1]
         prompt_or_args = cleaned_args[2] if len(cleaned_args) > 2 else None

@@ -38,6 +38,7 @@ from agr.cli.paths import (
     console,
     DEFAULT_REPO_NAME,
     TYPE_TO_SUBDIR,
+    error_exit,
     fetch_spinner,
     get_base_path,
     get_destination,
@@ -45,6 +46,14 @@ from agr.cli.paths import (
     parse_resource_ref,
 )
 from agr.cli.discovery import discover_local_resource_type
+
+# Mapping from type string to (ResourceType, subdir) tuple
+# Used by unified handlers for explicit type resolution
+RESOURCE_TYPE_MAP: dict[str, tuple[ResourceType, str]] = {
+    "skill": (ResourceType.SKILL, "skills"),
+    "command": (ResourceType.COMMAND, "commands"),
+    "agent": (ResourceType.AGENT, "agents"),
+}
 
 
 def print_success_message(
@@ -109,8 +118,7 @@ def handle_add_resource(
     try:
         parsed_username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
     except typer.BadParameter as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
 
     # Use parsed username if not provided
     install_username = username or parsed_username
@@ -125,8 +133,7 @@ def handle_add_resource(
             )
         print_success_message(resource_type.value, name, parsed_username, repo_name)
     except (RepoNotFoundError, ResourceNotFoundError, ResourceExistsError, AgrError) as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
 
 
 def get_local_resource_path(
@@ -341,11 +348,7 @@ def handle_remove_resource(
             found_username = None  # Flat path, no username
 
     if local_path is None:
-        typer.echo(
-            f"Error: {resource_type.value.capitalize()} '{name}' not found locally",
-            err=True,
-        )
-        raise typer.Exit(1)
+        error_exit(f"{resource_type.value.capitalize()} '{name}' not found locally")
 
     try:
         if local_path.is_dir():
@@ -365,8 +368,7 @@ def handle_remove_resource(
         _remove_from_agr_toml(name, found_username, global_install)
 
     except OSError as e:
-        typer.echo(f"Error: Failed to remove resource: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(f"Failed to remove resource: {e}")
 
 
 # Bundle handlers
@@ -452,8 +454,7 @@ def handle_add_bundle(
     try:
         username, repo_name, bundle_name, _path_segments = parse_resource_ref(bundle_ref)
     except typer.BadParameter as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
 
     dest_base = get_base_path(global_install)
 
@@ -468,8 +469,7 @@ def handle_add_bundle(
             print_bundle_success_message(bundle_name, result, username, repo_name)
 
     except (RepoNotFoundError, BundleNotFoundError, AgrError) as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
 
 
 def handle_remove_bundle(
@@ -489,11 +489,9 @@ def handle_remove_bundle(
         result = remove_bundle(bundle_name, dest_base)
         print_bundle_remove_message(bundle_name, result)
     except BundleNotFoundError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
     except OSError as e:
-        typer.echo(f"Error: Failed to remove bundle: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(f"Failed to remove bundle: {e}")
 
 
 # Unified handlers for auto-detection
@@ -554,8 +552,7 @@ def handle_add_unified(
     try:
         username, repo_name, name, path_segments = parse_resource_ref(resource_ref)
     except typer.BadParameter as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
 
     # Build dependency ref for agr.toml
     dep_ref = _build_dependency_ref(username, repo_name, name)
@@ -563,21 +560,15 @@ def handle_add_unified(
     # If explicit type provided, delegate to specific handler
     if resource_type:
         type_lower = resource_type.lower()
-        type_map = {
-            "skill": (ResourceType.SKILL, "skills"),
-            "command": (ResourceType.COMMAND, "commands"),
-            "agent": (ResourceType.AGENT, "agents"),
-        }
 
         if type_lower == "bundle":
             handle_add_bundle(resource_ref, overwrite, global_install)
             return
 
-        if type_lower not in type_map:
-            typer.echo(f"Error: Unknown resource type '{resource_type}'. Use: skill, command, agent, or bundle.", err=True)
-            raise typer.Exit(1)
+        if type_lower not in RESOURCE_TYPE_MAP:
+            error_exit(f"Unknown resource type '{resource_type}'. Use: skill, command, agent, or bundle.")
 
-        res_type, subdir = type_map[type_lower]
+        res_type, subdir = RESOURCE_TYPE_MAP[type_lower]
         handle_add_resource(resource_ref, res_type, subdir, overwrite, global_install, username=username)
         _add_to_agr_toml(dep_ref, res_type, global_install)
         return
@@ -612,23 +603,17 @@ def handle_add_unified(
                         )
                         _add_to_agr_toml(dep_ref, resolved.resource_type, global_install)
                     else:
-                        typer.echo(
-                            f"Error: Resource '{name}' found in agr.toml but has no type.",
-                            err=True,
-                        )
-                        raise typer.Exit(1)
+                        error_exit(f"Resource '{name}' found in agr.toml but has no type.")
                     return
 
                 # Fallback: check .claude/ directory (existing behavior)
                 discovery = discover_resource_type_from_dir(repo_dir, name, path_segments)
 
                 if discovery.is_empty:
-                    typer.echo(
-                        f"Error: Resource '{name}' not found in {username}/{repo_name}.\n"
-                        f"Searched in: agr.toml, skills, commands, agents, bundles.",
-                        err=True,
+                    error_exit(
+                        f"Resource '{name}' not found in {username}/{repo_name}.\n"
+                        f"Searched in: agr.toml, skills, commands, agents, bundles."
                     )
-                    raise typer.Exit(1)
 
                 if discovery.is_ambiguous:
                     # Build helpful example commands for each type found
@@ -666,11 +651,9 @@ def handle_add_unified(
                     _add_to_agr_toml(dep_ref, resource.resource_type, global_install)
 
     except (RepoNotFoundError, ResourceExistsError, BundleNotFoundError, MultipleResourcesFoundError) as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
     except AgrError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        error_exit(str(e))
 
 
 def handle_remove_unified(
@@ -702,21 +685,15 @@ def handle_remove_unified(
     # If explicit type provided, delegate to specific handler
     if resource_type:
         type_lower = resource_type.lower()
-        type_map = {
-            "skill": (ResourceType.SKILL, "skills"),
-            "command": (ResourceType.COMMAND, "commands"),
-            "agent": (ResourceType.AGENT, "agents"),
-        }
 
         if type_lower == "bundle":
             handle_remove_bundle(resource_name, global_install)
             return
 
-        if type_lower not in type_map:
-            typer.echo(f"Error: Unknown resource type '{resource_type}'. Use: skill, command, agent, or bundle.", err=True)
-            raise typer.Exit(1)
+        if type_lower not in RESOURCE_TYPE_MAP:
+            error_exit(f"Unknown resource type '{resource_type}'. Use: skill, command, agent, or bundle.")
 
-        res_type, subdir = type_map[type_lower]
+        res_type, subdir = RESOURCE_TYPE_MAP[type_lower]
         handle_remove_resource(resource_name, res_type, subdir, global_install, username=parsed_username)
         return
 
@@ -725,24 +702,20 @@ def handle_remove_unified(
     discovery = discover_local_resource_type(name, global_install)
 
     if discovery.is_empty:
-        typer.echo(
-            f"Error: Resource '{name}' not found locally.\n"
-            f"Searched in: skills, commands, agents.",
-            err=True,
+        error_exit(
+            f"Resource '{name}' not found locally.\n"
+            f"Searched in: skills, commands, agents."
         )
-        raise typer.Exit(1)
 
     if discovery.is_ambiguous:
         # Build helpful example commands for each type found
         examples = "\n".join(
             f"  agr remove {name} --type {t}" for t in discovery.found_types
         )
-        typer.echo(
-            f"Error: Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
-            f"Use --type to specify which one to remove:\n{examples}",
-            err=True,
+        error_exit(
+            f"Resource '{name}' found in multiple types: {', '.join(discovery.found_types)}.\n"
+            f"Use --type to specify which one to remove:\n{examples}"
         )
-        raise typer.Exit(1)
 
     # Remove the unique resource
     resource = discovery.resources[0]

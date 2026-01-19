@@ -4,6 +4,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from agr.constants import TOOL_DIR_NAME, SKILLS_SUBDIR, COMMANDS_SUBDIR, AGENTS_SUBDIR
 from agr.exceptions import BundleNotFoundError
 from agr.fetcher.download import downloaded_repo
 
@@ -94,20 +95,20 @@ def discover_bundle_contents(repo_dir: Path, bundle_name: str) -> BundleContents
     contents = BundleContents(bundle_name=bundle_name)
 
     # Discover skills: look for subdirectories with SKILL.md
-    skills_bundle_dir = repo_dir / ".claude" / "skills" / bundle_name
+    skills_bundle_dir = repo_dir / TOOL_DIR_NAME / SKILLS_SUBDIR / bundle_name
     if skills_bundle_dir.is_dir():
         for skill_dir in skills_bundle_dir.iterdir():
             if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
                 contents.skills.append(skill_dir.name)
 
     # Discover commands: look for .md files
-    commands_bundle_dir = repo_dir / ".claude" / "commands" / bundle_name
+    commands_bundle_dir = repo_dir / TOOL_DIR_NAME / COMMANDS_SUBDIR / bundle_name
     if commands_bundle_dir.is_dir():
         for cmd_file in commands_bundle_dir.glob("*.md"):
             contents.commands.append(cmd_file.stem)
 
     # Discover agents: look for .md files
-    agents_bundle_dir = repo_dir / ".claude" / "agents" / bundle_name
+    agents_bundle_dir = repo_dir / TOOL_DIR_NAME / AGENTS_SUBDIR / bundle_name
     if agents_bundle_dir.is_dir():
         for agent_file in agents_bundle_dir.glob("*.md"):
             contents.agents.append(agent_file.stem)
@@ -194,9 +195,9 @@ def fetch_bundle_from_repo_dir(
         raise BundleNotFoundError(
             f"Bundle '{bundle_name}' not found.\n"
             f"Expected one of:\n"
-            f"  - .claude/skills/{bundle_name}/*/SKILL.md\n"
-            f"  - .claude/commands/{bundle_name}/*.md\n"
-            f"  - .claude/agents/{bundle_name}/*.md"
+            f"  - {TOOL_DIR_NAME}/{SKILLS_SUBDIR}/{bundle_name}/*/SKILL.md\n"
+            f"  - {TOOL_DIR_NAME}/{COMMANDS_SUBDIR}/{bundle_name}/*.md\n"
+            f"  - {TOOL_DIR_NAME}/{AGENTS_SUBDIR}/{bundle_name}/*.md"
         )
 
     result = BundleInstallResult()
@@ -204,8 +205,8 @@ def fetch_bundle_from_repo_dir(
     # Install skills (directories)
     result.installed_skills, result.skipped_skills = _install_bundle_directory(
         contents.skills,
-        repo_dir / ".claude" / "skills" / bundle_name,
-        dest_base / "skills",
+        repo_dir / TOOL_DIR_NAME / SKILLS_SUBDIR / bundle_name,
+        dest_base / SKILLS_SUBDIR,
         bundle_name,
         overwrite,
     )
@@ -213,8 +214,8 @@ def fetch_bundle_from_repo_dir(
     # Install commands (files)
     result.installed_commands, result.skipped_commands = _install_bundle_files(
         contents.commands,
-        repo_dir / ".claude" / "commands" / bundle_name,
-        dest_base / "commands",
+        repo_dir / TOOL_DIR_NAME / COMMANDS_SUBDIR / bundle_name,
+        dest_base / COMMANDS_SUBDIR,
         bundle_name,
         overwrite,
     )
@@ -222,8 +223,8 @@ def fetch_bundle_from_repo_dir(
     # Install agents (files)
     result.installed_agents, result.skipped_agents = _install_bundle_files(
         contents.agents,
-        repo_dir / ".claude" / "agents" / bundle_name,
-        dest_base / "agents",
+        repo_dir / TOOL_DIR_NAME / AGENTS_SUBDIR / bundle_name,
+        dest_base / AGENTS_SUBDIR,
         bundle_name,
         overwrite,
     )
@@ -276,7 +277,7 @@ def remove_bundle(bundle_name: str, dest_base: Path) -> BundleRemoveResult:
     result = BundleRemoveResult()
 
     # Check and remove skills bundle directory
-    skills_bundle_dir = dest_base / "skills" / bundle_name
+    skills_bundle_dir = dest_base / SKILLS_SUBDIR / bundle_name
     if skills_bundle_dir.is_dir():
         for skill_dir in skills_bundle_dir.iterdir():
             if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
@@ -284,14 +285,14 @@ def remove_bundle(bundle_name: str, dest_base: Path) -> BundleRemoveResult:
         shutil.rmtree(skills_bundle_dir)
 
     # Check and remove commands bundle directory
-    commands_bundle_dir = dest_base / "commands" / bundle_name
+    commands_bundle_dir = dest_base / COMMANDS_SUBDIR / bundle_name
     if commands_bundle_dir.is_dir():
         for cmd_file in commands_bundle_dir.glob("*.md"):
             result.removed_commands.append(cmd_file.stem)
         shutil.rmtree(commands_bundle_dir)
 
     # Check and remove agents bundle directory
-    agents_bundle_dir = dest_base / "agents" / bundle_name
+    agents_bundle_dir = dest_base / AGENTS_SUBDIR / bundle_name
     if agents_bundle_dir.is_dir():
         for agent_file in agents_bundle_dir.glob("*.md"):
             result.removed_agents.append(agent_file.stem)
@@ -301,9 +302,9 @@ def remove_bundle(bundle_name: str, dest_base: Path) -> BundleRemoveResult:
         raise BundleNotFoundError(
             f"Bundle '{bundle_name}' not found locally.\n"
             f"Expected one of:\n"
-            f"  - {dest_base}/skills/{bundle_name}/\n"
-            f"  - {dest_base}/commands/{bundle_name}/\n"
-            f"  - {dest_base}/agents/{bundle_name}/"
+            f"  - {dest_base}/{SKILLS_SUBDIR}/{bundle_name}/\n"
+            f"  - {dest_base}/{COMMANDS_SUBDIR}/{bundle_name}/\n"
+            f"  - {dest_base}/{AGENTS_SUBDIR}/{bundle_name}/"
         )
 
     return result

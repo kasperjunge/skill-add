@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
+from agr.constants import TOOL_DIR_NAME, SKILLS_SUBDIR, COMMANDS_SUBDIR, AGENTS_SUBDIR
+
 
 class ResourceType(Enum):
     """Type of resource to fetch."""
@@ -26,22 +28,22 @@ class ResourceConfig:
 RESOURCE_CONFIGS: dict[ResourceType, ResourceConfig] = {
     ResourceType.SKILL: ResourceConfig(
         resource_type=ResourceType.SKILL,
-        source_subdir=".claude/skills",
-        dest_subdir="skills",
+        source_subdir=f"{TOOL_DIR_NAME}/{SKILLS_SUBDIR}",
+        dest_subdir=SKILLS_SUBDIR,
         is_directory=True,
         file_extension=None,
     ),
     ResourceType.COMMAND: ResourceConfig(
         resource_type=ResourceType.COMMAND,
-        source_subdir=".claude/commands",
-        dest_subdir="commands",
+        source_subdir=f"{TOOL_DIR_NAME}/{COMMANDS_SUBDIR}",
+        dest_subdir=COMMANDS_SUBDIR,
         is_directory=False,
         file_extension=".md",
     ),
     ResourceType.AGENT: ResourceConfig(
         resource_type=ResourceType.AGENT,
-        source_subdir=".claude/agents",
-        dest_subdir="agents",
+        source_subdir=f"{TOOL_DIR_NAME}/{AGENTS_SUBDIR}",
+        dest_subdir=AGENTS_SUBDIR,
         is_directory=False,
         file_extension=".md",
     ),
