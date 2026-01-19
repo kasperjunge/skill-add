@@ -20,4 +20,5 @@ dependencies = [
     {handle = "dsjacobsen/golang-pro", type = "skill"},
     {handle = "maragudk/skills/bluesky", type = "skill"},
     {handle = "maragudk/skills/brainstorm", type = "skill"},
+    {path = "./resources/skills/agr-feedback", type = "skill"},
 ]
