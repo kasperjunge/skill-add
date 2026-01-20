@@ -86,15 +86,36 @@ def _is_glob_pattern(ref: str) -> bool:
     return "*" in ref or "?" in ref or "[" in ref
 
 
+TYPE_DIRECTORY_TO_TYPE: dict[str, str] = {
+    "commands": "command",
+    "agents": "agent",
+    "rules": "rule",
+}
+
+
+def detect_resource_type_from_ancestors(file_path: Path) -> str | None:
+    """Detect resource type by finding type directory in file's ancestors.
+
+    Walks up the directory tree looking for type directories (commands/, agents/,
+    rules/). The first type directory found determines the resource type.
+
+    Note: Skills are detected by SKILL.md marker, not parent directories.
+    """
+    for parent in file_path.resolve().parents:
+        if parent.name in TYPE_DIRECTORY_TO_TYPE:
+            return TYPE_DIRECTORY_TO_TYPE[parent.name]
+    return None
+
+
 def _detect_local_type(path: Path) -> str | None:
     """Detect resource type from a local path using explicit markers.
 
-    Returns "skill", "command", "agent", "package", or None if unknown.
+    Returns "skill", "command", "agent", "rule", "package", or None if unknown.
 
     Detection rules:
     - Directory with PACKAGE.md -> package (highest priority)
     - Directory with SKILL.md -> skill
-    - File with .md extension -> command (or agent if in agents/ path)
+    - File with .md extension -> detect from ancestor directories (commands/, agents/, rules/)
 
     Directories without explicit markers return None and route to
     handle_add_directory() for individual resource discovery.
@@ -102,9 +123,8 @@ def _detect_local_type(path: Path) -> str | None:
     if path.is_file():
         if path.suffix != ".md":
             return None
-        if "agents/" in str(path):
-            return "agent"
-        return "command"
+        # Use ancestor-based detection instead of defaulting to command
+        return detect_resource_type_from_ancestors(path)
 
     if not path.is_dir():
         return None
@@ -317,9 +337,15 @@ def handle_add_local(
             return
 
     if not resource_type:
+        if path.is_file() and path.suffix == ".md":
+            error_exit(
+                f"Cannot determine resource type for {path.name}\n"
+                "The file is not under a commands/, agents/, or rules/ directory.\n"
+                f"Use --type to specify: agr add {local_path} --type <command|agent|rule>"
+            )
         error_exit(
             f"Could not detect resource type for '{path}'.\n"
-            "Use --type to specify: skill, command, agent, or package"
+            "Use --type to specify: skill, command, agent, rule, or package"
         )
 
     # Validate packages

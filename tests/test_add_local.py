@@ -145,8 +145,8 @@ class TestAddLocal:
         assert result.exit_code == 0
         assert "skill" in result.output
 
-    def test_add_local_auto_detects_command_from_md_file(self, tmp_path: Path, monkeypatch):
-        """Test that .md files default to command type."""
+    def test_add_local_md_file_requires_type_or_type_dir(self, tmp_path: Path, monkeypatch):
+        """Test that .md files not under type dirs require --type."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".git").mkdir()
 
@@ -154,9 +154,8 @@ class TestAddLocal:
 
         result = runner.invoke(app, ["add", "./cmd.md"])
 
-        assert result.exit_code == 0
-        # .md files default to command
-        assert "command" in result.output
+        assert result.exit_code == 1
+        assert "Cannot determine resource type" in result.output
 
 
 class TestAddGlob:
@@ -363,10 +362,12 @@ class TestWorkspaceAdd:
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".git").mkdir()
 
-        # Create local command
-        (tmp_path / "cmd.md").write_text("# Command")
+        # Create local command under commands/ directory
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "cmd.md").write_text("# Command")
 
-        result = runner.invoke(app, ["add", "./cmd.md", "-w", "mypkg"])
+        result = runner.invoke(app, ["add", "./commands/cmd.md", "-w", "mypkg"])
 
         assert result.exit_code == 0
 
@@ -518,4 +519,193 @@ class TestNestedCommandAgentPaths:
 
         # Verify installed to flat path: .claude/commands/local/commit.md
         installed = tmp_path / ".claude" / "commands" / "local" / "commit.md"
+        assert installed.exists()
+
+
+class TestDetectResourceTypeFromAncestors:
+    """Tests for detect_resource_type_from_ancestors function."""
+
+    def test_detect_type_from_commands_dir(self, tmp_path: Path):
+        """File directly under commands/ detected as command."""
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        file_path = commands_dir / "deploy.md"
+        file_path.write_text("# Deploy")
+
+        from agr.cli.add import detect_resource_type_from_ancestors
+        assert detect_resource_type_from_ancestors(file_path) == "command"
+
+    def test_detect_type_from_nested_commands(self, tmp_path: Path):
+        """File deep under commands/ still detected as command."""
+        nested_dir = tmp_path / "commands" / "infra" / "aws"
+        nested_dir.mkdir(parents=True)
+        file_path = nested_dir / "deploy.md"
+        file_path.write_text("# Deploy")
+
+        from agr.cli.add import detect_resource_type_from_ancestors
+        assert detect_resource_type_from_ancestors(file_path) == "command"
+
+    def test_detect_type_from_agents_dir(self, tmp_path: Path):
+        """File under agents/ detected as agent."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        file_path = agents_dir / "reviewer.md"
+        file_path.write_text("# Reviewer")
+
+        from agr.cli.add import detect_resource_type_from_ancestors
+        assert detect_resource_type_from_ancestors(file_path) == "agent"
+
+    def test_detect_type_from_rules_dir(self, tmp_path: Path):
+        """File under rules/ detected as rule."""
+        rules_dir = tmp_path / "rules"
+        rules_dir.mkdir()
+        file_path = rules_dir / "style.md"
+        file_path.write_text("# Style Guide")
+
+        from agr.cli.add import detect_resource_type_from_ancestors
+        assert detect_resource_type_from_ancestors(file_path) == "rule"
+
+    def test_detect_type_no_type_dir(self, tmp_path: Path):
+        """File not under type directory returns None."""
+        file_path = tmp_path / "random.md"
+        file_path.write_text("# Random")
+
+        from agr.cli.add import detect_resource_type_from_ancestors
+        assert detect_resource_type_from_ancestors(file_path) is None
+
+    def test_closest_type_dir_wins(self, tmp_path: Path):
+        """When multiple type dirs in path, closest one wins."""
+        # Create path like agents/commands/x.md
+        nested_dir = tmp_path / "agents" / "commands"
+        nested_dir.mkdir(parents=True)
+        file_path = nested_dir / "test.md"
+        file_path.write_text("# Test")
+
+        from agr.cli.add import detect_resource_type_from_ancestors
+        # "commands" is closer than "agents", so it should win
+        assert detect_resource_type_from_ancestors(file_path) == "command"
+
+
+class TestAncestorDetectionIntegration:
+    """Integration tests for ancestor-based type detection."""
+
+    def test_add_command_from_commands_dir(self, tmp_path: Path, monkeypatch):
+        """Adding ./commands/deploy.md auto-detects as command."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "deploy.md").write_text("# Deploy")
+
+        result = runner.invoke(app, ["add", "./commands/deploy.md"])
+
+        assert result.exit_code == 0
+        assert "Added local command 'deploy'" in result.output
+
+        # Verify installed to .claude/commands/
+        installed = tmp_path / ".claude" / "commands" / "local" / "deploy.md"
+        assert installed.exists()
+
+    def test_add_agent_from_agents_dir(self, tmp_path: Path, monkeypatch):
+        """Adding ./agents/reviewer.md auto-detects as agent."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "reviewer.md").write_text("# Reviewer")
+
+        result = runner.invoke(app, ["add", "./agents/reviewer.md"])
+
+        assert result.exit_code == 0
+        assert "Added local agent 'reviewer'" in result.output
+
+        # Verify installed to .claude/agents/
+        installed = tmp_path / ".claude" / "agents" / "local" / "reviewer.md"
+        assert installed.exists()
+
+    def test_add_rule_from_rules_dir(self, tmp_path: Path, monkeypatch):
+        """Adding ./rules/style.md auto-detects as rule."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        rules_dir = tmp_path / "rules"
+        rules_dir.mkdir()
+        (rules_dir / "style.md").write_text("# Style Guide")
+
+        result = runner.invoke(app, ["add", "./rules/style.md"])
+
+        assert result.exit_code == 0
+        assert "Added local rule 'style'" in result.output
+
+        # Verify installed to .claude/rules/
+        installed = tmp_path / ".claude" / "rules" / "local" / "style.md"
+        assert installed.exists()
+
+    def test_add_nested_command_preserves_path(self, tmp_path: Path, monkeypatch):
+        """Adding ./commands/infra/aws/deploy.md preserves nested structure."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        nested_dir = tmp_path / "commands" / "infra" / "aws"
+        nested_dir.mkdir(parents=True)
+        (nested_dir / "deploy.md").write_text("# Deploy")
+
+        result = runner.invoke(app, ["add", "./commands/infra/aws/deploy.md"])
+
+        assert result.exit_code == 0
+        assert "Added local command 'deploy'" in result.output
+
+        # Verify installed to nested path: .claude/commands/local/infra/aws/deploy.md
+        installed = tmp_path / ".claude" / "commands" / "local" / "infra" / "aws" / "deploy.md"
+        assert installed.exists()
+
+
+class TestAmbiguousFileErrorHandling:
+    """Tests for error handling when type cannot be determined."""
+
+    def test_error_message_for_root_md_file(self, tmp_path: Path, monkeypatch):
+        """Clear error when .md file is not under type directory."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        (tmp_path / "random.md").write_text("# Random")
+
+        result = runner.invoke(app, ["add", "./random.md"])
+
+        assert result.exit_code == 1
+        assert "Cannot determine resource type" in result.output
+        assert "not under a commands/, agents/, or rules/ directory" in result.output
+        assert "--type" in result.output
+
+    def test_type_flag_overrides_detection(self, tmp_path: Path, monkeypatch):
+        """--type flag allows adding ambiguous files."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        (tmp_path / "random.md").write_text("# Random Command")
+
+        result = runner.invoke(app, ["add", "./random.md", "--type", "command"])
+
+        assert result.exit_code == 0
+        assert "Added local command 'random'" in result.output
+
+    def test_type_flag_overrides_auto_detection(self, tmp_path: Path, monkeypatch):
+        """--type takes precedence over auto-detection."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create a file under commands/ but force it to be an agent
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "deploy.md").write_text("# Deploy Agent")
+
+        result = runner.invoke(app, ["add", "./commands/deploy.md", "--type", "agent"])
+
+        assert result.exit_code == 0
+        assert "Added local agent 'deploy'" in result.output
+
+        # Verify installed to .claude/agents/
+        installed = tmp_path / ".claude" / "agents" / "local" / "deploy.md"
         assert installed.exists()
