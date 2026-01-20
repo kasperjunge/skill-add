@@ -39,24 +39,20 @@ class TestParseHandle:
         assert result.path_segments == ["seo"]
 
     def test_three_part_slash(self):
-        """Test parsing user/nested/name format.
-
-        Note: 3-part handles are treated as user/nested_path/name for skill
-        dirname purposes. The middle segment is part of path_segments,
-        not treated as a repo name.
-        """
+        """Test parsing user/repo/name format (second part is repo)."""
         result = parse_handle("user/repo/command")
         assert result.username == "user"
+        assert result.repo == "repo"
         assert result.name == "command"
-        # All segments after username are in path_segments for skill dirname conversion
-        assert result.path_segments == ["repo", "command"]
+        assert result.path_segments == ["command"]
 
     def test_four_part_slash(self):
-        """Test parsing user/nested/more/name format."""
+        """Test parsing user/repo/path/name format."""
         result = parse_handle("user/nested/more/name")
         assert result.username == "user"
+        assert result.repo == "nested"
         assert result.name == "name"
-        assert result.path_segments == ["nested", "more", "name"]
+        assert result.path_segments == ["more", "name"]
 
     def test_colon_format_simple(self):
         """Test parsing user:name colon format."""
@@ -200,16 +196,19 @@ class TestTomlHandleToSkillDirname:
         assert toml_handle_to_skill_dirname("kasperjunge/seo") == "kasperjunge:seo"
 
     def test_nested(self):
-        """Test nested conversion."""
-        result = toml_handle_to_skill_dirname("kasperjunge/product-strategy/growth-hacker")
+        """Test nested conversion with 4-part handle (path_segments after repo)."""
+        result = toml_handle_to_skill_dirname("kasperjunge/repo/product-strategy/growth-hacker")
         assert result == "kasperjunge:product-strategy:growth-hacker"
 
     def test_with_nested_path(self):
-        """Test conversion with nested path (3-part)."""
-        # 3-part handles are treated as user/nested/name, so all segments
-        # after username become part of the skill dirname
+        """Test 3-part handle conversion (repo not in dirname)."""
         result = toml_handle_to_skill_dirname("user/nested/skill")
-        assert result == "user:nested:skill"
+        assert result == "user:skill"
+
+    def test_maragudk_skills_collaboration(self):
+        """Test maragudk/skills/collaboration: repo not in dirname."""
+        result = toml_handle_to_skill_dirname("maragudk/skills/collaboration")
+        assert result == "maragudk:collaboration"
 
 
 class TestRoundTrip:
@@ -223,12 +222,15 @@ class TestRoundTrip:
         assert back == original
 
     def test_nested_toml_to_dirname_to_toml(self):
-        """Test nested toml -> dirname -> toml round trip."""
+        """Test nested toml -> dirname -> toml round trip.
+
+        3-part handles lose repo info in round-trip (repo not in dirname).
+        """
         original = "kasperjunge/product-strategy/growth-hacker"
         dirname = toml_handle_to_skill_dirname(original)
-        assert dirname == "kasperjunge:product-strategy:growth-hacker"
+        assert dirname == "kasperjunge:growth-hacker"
         back = skill_dirname_to_toml_handle(dirname)
-        assert back == original
+        assert back == "kasperjunge/growth-hacker"
 
     def test_dirname_to_toml_to_dirname(self):
         """Test dirname -> toml -> dirname round trip."""
@@ -238,11 +240,16 @@ class TestRoundTrip:
         assert back == original
 
     def test_nested_dirname_to_toml_to_dirname(self):
-        """Test nested dirname -> toml -> dirname round trip."""
+        """Test nested dirname -> toml -> dirname round trip.
+
+        3-part slash handles treat the middle segment as repo, which is not
+        included in the dirname. Round-trip loses the middle segment.
+        """
         original = "kasperjunge:product-strategy:growth-hacker"
         toml = skill_dirname_to_toml_handle(original)
+        assert toml == "kasperjunge/product-strategy/growth-hacker"
         back = toml_handle_to_skill_dirname(toml)
-        assert back == original
+        assert back == "kasperjunge:growth-hacker"
 
 
 class TestParsedHandleToSkillPath:

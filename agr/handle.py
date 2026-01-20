@@ -281,16 +281,14 @@ def parse_handle(handle: str) -> ParsedHandle:
                 path_segments=[parts[1]],
             )
 
-        # For 3+ parts, we store all segments after username in path_segments
-        # This allows proper round-trip conversion for skill dirnames.
-        # The repo field is only set when explicitly needed for GitHub URLs,
-        # but for skill dirname purposes, path_segments is what matters.
-        if len(parts) >= 3:
-            return ParsedHandle(
-                username=parts[0],
-                name=parts[-1],
-                path_segments=parts[1:],
-            )
+        # 3+ parts: user/repo/name or user/repo/path/name
+        # Second part is repo, remaining parts are path_segments
+        return ParsedHandle(
+            username=parts[0],
+            repo=parts[1],
+            name=parts[-1],
+            path_segments=parts[2:],
+        )
 
     # Simple name
     return ParsedHandle(name=handle, path_segments=[handle])
