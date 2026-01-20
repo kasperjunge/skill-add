@@ -13,8 +13,12 @@ from typer.testing import CliRunner
 from agr.cli.main import app
 from agr.config import AgrConfig
 from agr.utils import (
+    TYPE_DIRECTORIES,
+    compute_flattened_resource_name,
     compute_flattened_skill_name,
+    compute_path_segments,
     compute_path_segments_from_skill_path,
+    find_package_context,
     update_skill_md_name,
 )
 
@@ -483,3 +487,166 @@ type = "skill"
         installed = tmp_path / ".claude" / "skills" / "local:my-skill" / "SKILL.md"
         content = installed.read_text()
         assert "name: local:my-skill" in content
+
+
+class TestComputeFlattenedResourceName:
+    """Tests for compute_flattened_resource_name helper."""
+
+    def test_without_package(self):
+        """Test resource name without package context."""
+        result = compute_flattened_resource_name("kasperjunge", ["commit"])
+        assert result == "kasperjunge:commit"
+
+    def test_nested_without_package(self):
+        """Test nested resource name without package context."""
+        result = compute_flattened_resource_name(
+            "kasperjunge", ["product-strategy", "growth-hacker"]
+        )
+        assert result == "kasperjunge:product-strategy:growth-hacker"
+
+    def test_with_package(self):
+        """Test resource name with package context."""
+        result = compute_flattened_resource_name(
+            "kasperjunge", ["commit"], "my-toolkit"
+        )
+        assert result == "kasperjunge:my-toolkit:commit"
+
+    def test_nested_with_package(self):
+        """Test nested resource name with package context."""
+        result = compute_flattened_resource_name(
+            "kasperjunge", ["git", "status"], "my-toolkit"
+        )
+        assert result == "kasperjunge:my-toolkit:git:status"
+
+    def test_empty_segments_raises(self):
+        """Test that empty path segments raises an error."""
+        with pytest.raises(ValueError):
+            compute_flattened_resource_name("kasperjunge", [])
+
+
+class TestComputePathSegmentsGeneralized:
+    """Tests for compute_path_segments helper with all type directories."""
+
+    def test_skills_dir_single_level(self):
+        """Test skills dir with single level."""
+        path = Path("skills/commit")
+        result = compute_path_segments(path)
+        assert result == ["commit"]
+
+    def test_skills_dir_nested(self):
+        """Test skills dir with nested path."""
+        path = Path("skills/git/status")
+        result = compute_path_segments(path)
+        assert result == ["git", "status"]
+
+    def test_commands_dir(self):
+        """Test commands dir extracts path segments."""
+        path = Path("commands/git/clone.md")
+        result = compute_path_segments(path)
+        assert result == ["git", "clone"]
+
+    def test_agents_dir(self):
+        """Test agents dir extracts path segments."""
+        path = Path("agents/reviewer.md")
+        result = compute_path_segments(path)
+        assert result == ["reviewer"]
+
+    def test_rules_dir(self):
+        """Test rules dir extracts path segments."""
+        path = Path("rules/no-console.md")
+        result = compute_path_segments(path)
+        assert result == ["no-console"]
+
+    def test_outside_type_dir(self):
+        """Test path outside type directories returns just name."""
+        path = Path("standalone/SKILL.md")
+        result = compute_path_segments(path)
+        assert result == ["SKILL"]
+
+    def test_outside_type_dir_directory(self):
+        """Test directory outside type directories returns just name."""
+        path = Path("my-custom-dir/my-skill")
+        result = compute_path_segments(path)
+        assert result == ["my-skill"]
+
+    def test_with_explicit_root(self):
+        """Test with explicit resource root."""
+        root = Path("./resources/skills")
+        path = Path("./resources/skills/product-strategy/growth-hacker")
+        result = compute_path_segments(path, root)
+        assert result == ["product-strategy", "growth-hacker"]
+
+    def test_file_extension_removed(self):
+        """Test that file extensions are removed from segments."""
+        path = Path("commands/deploy.md")
+        result = compute_path_segments(path)
+        assert result == ["deploy"]
+
+
+class TestFindPackageContext:
+    """Tests for find_package_context helper."""
+
+    def test_finds_package_from_nested_skill(self, tmp_path: Path):
+        """Test finding package context from a nested skill."""
+        pkg_dir = tmp_path / "my-toolkit"
+        skill_dir = pkg_dir / "skills" / "git"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# Git Skill")
+        (pkg_dir / "PACKAGE.md").write_text(
+            """---
+name: my-toolkit
+---
+
+# My Toolkit
+"""
+        )
+
+        package_name, package_root = find_package_context(skill_dir)
+        assert package_name == "my-toolkit"
+        assert package_root == pkg_dir
+
+    def test_returns_none_outside_package(self, tmp_path: Path):
+        """Test returns None when outside a package."""
+        skill_dir = tmp_path / "skills" / "git"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# Git Skill")
+
+        package_name, package_root = find_package_context(skill_dir)
+        assert package_name is None
+        assert package_root is None
+
+    def test_returns_none_for_invalid_package_md(self, tmp_path: Path):
+        """Test returns None name for invalid PACKAGE.md."""
+        pkg_dir = tmp_path / "my-toolkit"
+        skill_dir = pkg_dir / "skills" / "git"
+        skill_dir.mkdir(parents=True)
+        (pkg_dir / "PACKAGE.md").write_text("Invalid - no frontmatter")
+
+        package_name, package_root = find_package_context(skill_dir)
+        assert package_name is None
+        # package_root is still set because PACKAGE.md exists
+        assert package_root == pkg_dir
+
+
+class TestBackwardCompatibility:
+    """Tests for backward compatibility of deprecated aliases."""
+
+    def test_compute_flattened_skill_name_delegates(self):
+        """Test that deprecated function delegates to new one."""
+        result = compute_flattened_skill_name("kasperjunge", ["commit"])
+        expected = compute_flattened_resource_name("kasperjunge", ["commit"])
+        assert result == expected
+
+    def test_compute_path_segments_from_skill_path_delegates(self):
+        """Test that deprecated function produces same results."""
+        path = Path("./resources/skills/product-strategy/growth-hacker")
+        result = compute_path_segments_from_skill_path(path)
+        expected = compute_path_segments(path, type_dirs=("skills",))
+        assert result == expected
+
+    def test_type_directories_constant(self):
+        """Test TYPE_DIRECTORIES constant contains expected values."""
+        assert "skills" in TYPE_DIRECTORIES
+        assert "commands" in TYPE_DIRECTORIES
+        assert "agents" in TYPE_DIRECTORIES
+        assert "rules" in TYPE_DIRECTORIES

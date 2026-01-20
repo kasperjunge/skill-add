@@ -18,7 +18,12 @@ from agr.cli.common import (
     get_base_path,
 )
 from agr.cli.paths import remove_path
-from agr.utils import compute_flattened_skill_name, compute_path_segments_from_skill_path, update_skill_md_name
+from agr.utils import (
+    compute_flattened_resource_name,
+    compute_path_segments,
+    find_package_context,
+    update_skill_md_name,
+)
 
 app = typer.Typer()
 
@@ -190,11 +195,14 @@ def _sync_local_dependency(
         except Exception as e:
             return (None, None, (name, str(e)))
 
+    # Check if source is inside a package
+    package_name, _ = find_package_context(source_path)
+
     # Build destination path
     if dep.type == "skill":
         # Skills use flattened colon-namespaced directory names
-        path_segments = compute_path_segments_from_skill_path(source_path)
-        flattened_name = compute_flattened_skill_name(username, path_segments)
+        path_segments = compute_path_segments(source_path)
+        flattened_name = compute_flattened_resource_name(username, path_segments, package_name)
         dest_path = base_path / subdir / flattened_name
         name = flattened_name
     else:
@@ -205,20 +213,18 @@ def _sync_local_dependency(
     try:
         is_update = dest_path.exists()
 
-        # Check if source is newer
-        if dest_path.exists():
+        # Check if source is newer than destination
+        if is_update:
             if source_path.is_dir():
                 source_marker = source_path / "SKILL.md"
                 dest_marker = dest_path / "SKILL.md"
                 if source_marker.exists() and dest_marker.exists():
                     if source_marker.stat().st_mtime <= dest_marker.stat().st_mtime:
                         return (None, None, None)  # Up to date
-            else:
-                if source_path.stat().st_mtime <= dest_path.stat().st_mtime:
-                    return (None, None, None)  # Up to date
+            elif source_path.stat().st_mtime <= dest_path.stat().st_mtime:
+                return (None, None, None)  # Up to date
 
-        # Remove existing if updating
-        if is_update:
+            # Remove existing before updating
             if dest_path.is_dir():
                 shutil.rmtree(dest_path)
             else:

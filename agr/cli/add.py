@@ -22,7 +22,12 @@ from agr.config import Dependency, get_or_create_config
 from agr.fetcher import ResourceType
 from agr.github import get_username_from_git_remote
 from agr.package import parse_package_md, validate_no_nested_packages
-from agr.utils import compute_flattened_skill_name, compute_path_segments_from_skill_path, update_skill_md_name
+from agr.utils import (
+    compute_flattened_resource_name,
+    compute_path_segments,
+    find_package_context,
+    update_skill_md_name,
+)
 
 # Deprecated subcommand names
 DEPRECATED_SUBCOMMANDS = {"skill", "command", "agent", "bundle"}
@@ -150,7 +155,7 @@ def _explode_package(
             skill_dir = skill_md.parent
             # Compute path segments relative to package skills dir
             rel_parts = list(skill_dir.relative_to(skills_dir).parts)
-            flattened_name = compute_flattened_skill_name(username, [package_name] + rel_parts)
+            flattened_name = compute_flattened_resource_name(username, rel_parts, package_name)
             dest = base_path / "skills" / flattened_name
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists():
@@ -185,6 +190,7 @@ def _install_local_resource(
     resource_type: str,
     username: str,
     base_path: Path,
+    package_context: tuple[str | None, Path | None] = (None, None),
 ) -> str:
     """Install a local resource to .claude/ directory.
 
@@ -193,6 +199,8 @@ def _install_local_resource(
         resource_type: Type of resource (skill, command, agent, package)
         username: Username for namespacing
         base_path: Base .claude/ path
+        package_context: Optional tuple of (package_name, package_root) for
+                         resources inside a package
 
     Returns:
         The installed resource name (flattened for skills)
@@ -203,11 +211,12 @@ def _install_local_resource(
         return source_path.name  # Package is exploded to type directories
 
     subdir = TYPE_TO_SUBDIR.get(resource_type, "skills")
+    package_name, package_root = package_context
 
     if resource_type == "skill":
         # Skills use flattened colon-namespaced directory names
-        path_segments = compute_path_segments_from_skill_path(source_path)
-        flattened_name = compute_flattened_skill_name(username, path_segments)
+        path_segments = compute_path_segments(source_path)
+        flattened_name = compute_flattened_resource_name(username, path_segments, package_name)
         dest_path = base_path / subdir / flattened_name
         name = flattened_name
     else:
@@ -365,6 +374,9 @@ def handle_add_directory(
     base_path = get_base_path(global_install)
     username = get_username_from_git_remote(find_repo_root()) or "local"
 
+    # Check if directory is inside a package
+    package_context = find_package_context(dir_path)
+
     added_count = 0
 
     # Find all skill directories (containing SKILL.md) recursively
@@ -379,7 +391,7 @@ def handle_add_directory(
             config.add_to_workspace(workspace, dep)
         else:
             config.add_local(rel_path, "skill")
-        installed_name = _install_local_resource(skill_dir, "skill", username, base_path)
+        installed_name = _install_local_resource(skill_dir, "skill", username, base_path, package_context)
         console.print(f"[green]Added skill '{installed_name}'[/green]")
         added_count += 1
 
@@ -406,7 +418,7 @@ def handle_add_directory(
                 config.add_to_workspace(workspace, dep)
             else:
                 config.add_local(rel_path, detected_type)
-            _install_local_resource(md_file, detected_type, username, base_path)
+            _install_local_resource(md_file, detected_type, username, base_path, package_context)
             console.print(f"[green]Added {detected_type} '{md_file.stem}'[/green]")
             added_count += 1
 
