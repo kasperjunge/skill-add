@@ -18,9 +18,11 @@ Install skills, commands, and subagents from GitHub with a single command.
 - **One command installs agent skills from GitHub**: `agr add user/skill` — no manual file copying to `.claude/`
 - **Try before you install**: `agrx user/skill` runs temporarily, then cleans up
 - **Team reproducibility**: `agr.toml` tracks dependencies; `agr sync` installs everything
-- **Auto-detects resource type**: Skills, commands, subagents — agr figures it out
+- **Multi-tool support**: Sync resources to Claude Code, Cursor, and other AI tools with `--tool` flag
+- **Auto-detects resource type**: Skills, commands, subagents, rules — agr figures it out
 - **Build your personal library**: Create a GitHub repo of your best skills and share them with anyone
 - **Package related resources**: Package skills, commands, and subagents together for easy distribution
+- **Install entire repositories**: `agr sync owner/repo` installs all resources from a GitHub repo
 - **Stop editing `.claude/` directly**: Treat it like `.venv/` — let agr manage it, you manage source files
 
 ---
@@ -97,12 +99,15 @@ agr sync
 | `agr add <handle>` | Install a resource |
 | `agr remove <name>` | Uninstall a resource |
 | `agr sync` | Install all dependencies from `agr.toml` |
-| `agr list` | Show installed resources |
+| `agr sync owner/repo` | Install all resources from a GitHub repo |
+| `agr list` | Show installed resources with status |
 | `agr init` | Set up authoring directories |
 | `agr init skill <name>` | Create a new skill |
 | `agr init command <name>` | Create a new command |
 | `agr init agent <name>` | Create a new subagent |
 | `agrx <handle>` | Run a resource temporarily |
+
+Use `--tool claude --tool cursor` on any command to target specific AI tools.
 
 ---
 

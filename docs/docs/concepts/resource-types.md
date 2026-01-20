@@ -4,7 +4,14 @@ title: Resource types
 
 # Resource types
 
-agr manages three resource types for Claude Code.
+agr manages four resource types for Claude Code.
+
+| Type | File | Path format | Purpose |
+|------|------|-------------|---------|
+| Skill | `SKILL.md` | `username:name/` | Define behavior and instructions |
+| Command | `name.md` | `username/name.md` | Slash commands |
+| Agent | `name.md` | `username/name.md` | Sub-agents for delegation |
+| Rule | `name.md` | `username/name.md` | Constraints and guidelines |
 
 ## Skills
 
@@ -43,3 +50,17 @@ An agent is a markdown file that defines a sub-agent that your main agent can de
         └── username/
             └── test-writer.md
 ```
+
+## Rules
+
+A rule is a markdown file that defines constraints or guidelines for Claude to follow.
+
+```
+./
+└── .claude/
+    └── rules/
+        └── username/
+            └── no-console.md
+```
+
+Rules define project-specific constraints like coding standards, security requirements, or behavioral guidelines.

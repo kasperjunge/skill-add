@@ -22,13 +22,14 @@ agr add <username>/<repo>/<name>
 agr add ./path/to/resource
 ```
 
-The resource type (skill, command, or agent) is automatically detected.
+The resource type (skill, command, agent, or rule) is automatically detected.
 
 ### Options
 
-- `--type`, `-t`: Explicit resource type (`skill`, `command`, `agent`)
+- `--type`, `-t`: Explicit resource type (`skill`, `command`, `agent`, `rule`)
 - `--global`, `-g`: Install to `~/.claude/` instead of the current directory
 - `--overwrite`: Replace an existing resource
+- `--tool`: Target tool(s) to install to (e.g., `--tool claude --tool cursor`)
 
 ### Examples
 
@@ -47,6 +48,9 @@ agr add ./resources/skills/my-skill --type skill
 
 # Add local command
 agr add ./resources/commands/deploy.md --type command
+
+# Install to multiple tools
+agr add kasperjunge/commit --tool claude --tool cursor
 ```
 
 ### Where resources go
@@ -95,7 +99,7 @@ Use --type to specify which one to install:
 
 ## agr sync
 
-Synchronize resources from local authoring paths and remote dependencies.
+Synchronize resources from local paths and remote dependencies.
 
 ### Syntax
 
@@ -105,14 +109,18 @@ agr sync --prune
 agr sync --local
 agr sync --remote
 agr sync --global
+agr sync owner/repo
+agr sync owner/repo --yes
 ```
 
 ### What gets synced
 
 By default, `agr sync` syncs both:
 
-1. **Local authoring resources** — From `resources/skills/`, `resources/commands/`, `resources/agents/`
+1. **Local resources** — From `resources/skills/`, `resources/commands/`, `resources/agents/`, `resources/rules/`
 2. **Remote dependencies** — From `agr.toml`
+
+With an `owner/repo` argument, syncs all resources from that GitHub repository.
 
 ### Options
 
@@ -120,6 +128,9 @@ By default, `agr sync` syncs both:
 - `--prune`: Remove resources that no longer exist in source or `agr.toml`
 - `--local`: Only sync local authoring resources
 - `--remote`: Only sync remote dependencies from `agr.toml`
+- `--overwrite`, `-o`: Overwrite existing resources (for repo sync)
+- `--yes`, `-y`: Skip confirmation prompt (for repo sync)
+- `--tool`: Target tool(s) to sync to (e.g., `--tool claude --tool cursor`)
 
 ### Examples
 
@@ -138,9 +149,21 @@ agr sync --prune
 
 # Sync global resources
 agr sync --global
+
+# Sync to specific tools
+agr sync --tool claude --tool cursor
+
+# Install all resources from a repository
+agr sync maragudk/skills
+
+# Install from repo, skip confirmation
+agr sync owner/repo --yes
+
+# Install from repo, overwrite existing
+agr sync owner/repo --overwrite --yes
 ```
 
-### Local authoring sync
+### Local sync
 
 Discovers resources in convention paths and copies them to `.claude/`:
 
@@ -150,7 +173,7 @@ Discovers resources in convention paths and copies them to `.claude/`:
 | `resources/commands/<name>.md` | `.claude/commands/<username>/<name>.md` |
 | `resources/agents/<name>.md` | `.claude/agents/<username>/<name>.md` |
 
-The username is determined from your git remote. If no remote exists, `local` is used.
+The username comes from your git remote, or `local` if no remote exists.
 
 ### Remote dependency sync
 
@@ -176,7 +199,7 @@ Sync complete: 2 installed, 1 updated, 0 pruned
 
 ## agr remove
 
-Remove resources from the local installation with auto-detection.
+Remove installed resources.
 
 ### Syntax
 
@@ -185,12 +208,13 @@ agr remove <name>
 agr remove <username>/<name>
 ```
 
-Auto-detects the resource type from installed files.
+The resource type is auto-detected from installed files.
 
 ### Options
 
-- `--type`, `-t`: Explicit resource type (`skill`, `command`, `agent`)
+- `--type`, `-t`: Explicit resource type (`skill`, `command`, `agent`, `rule`)
 - `--global`, `-g`: Remove from `~/.claude/` instead of the current directory
+- `--tool`: Target tool(s) to remove from (e.g., `--tool claude --tool cursor`)
 
 ### Examples
 
@@ -206,6 +230,9 @@ agr remove hello --type skill
 
 # Remove from global installation
 agr remove hello-world --global
+
+# Remove from specific tools
+agr remove hello-world --tool claude --tool cursor
 ```
 
 ### Dependency tracking
@@ -226,9 +253,72 @@ Use --type to specify which one to remove:
 !!! warning
     Resources are removed immediately without confirmation.
 
+## agr list
+
+Show dependencies and their installation status.
+
+### Syntax
+
+```bash
+agr list
+agr list --json
+agr list --local
+agr list --remote
+```
+
+### Options
+
+- `--format`, `-f`: Output format (`table`, `simple`, or `json`)
+- `--local`: Only show local dependencies
+- `--remote`: Only show remote dependencies
+- `--global`, `-g`: Check installation in global config directory
+- `--tool`: Target tool(s) to check status for (e.g., `--tool claude --tool cursor`)
+
+### Examples
+
+```bash
+# Show all dependencies as table
+agr list
+
+# Output as JSON
+agr list --format json
+
+# Show only local dependencies
+agr list --local
+
+# Show only remote dependencies
+agr list --remote
+
+# Show per-tool installation status
+agr list --tool claude --tool cursor
+```
+
+### Output
+
+```
+┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Source ┃ Type   ┃ Handle/Path          ┃ Status        ┃
+┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ remote │ skill  │ kasperjunge/commit   │ installed     │
+│ local  │ command│ ./commands/docs.md   │ not installed │
+└────────┴────────┴──────────────────────┴───────────────┘
+2/2 installed
+```
+
+When using `--tool` with multiple tools, status columns are shown per tool:
+
+```
+┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┓
+┃ Source ┃ Type   ┃ Handle/Path          ┃ Claude   ┃ Cursor ┃
+┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━┩
+│ remote │ skill  │ kasperjunge/commit   │ ✓        │ ✓      │
+│ local  │ command│ ./commands/docs.md   │ ✗        │ ✓      │
+└────────┴────────┴──────────────────────┴──────────┴────────┘
+```
+
 ## agrx
 
-Run skills and commands temporarily without permanent installation.
+Run resources temporarily without installation.
 
 ### Syntax
 
@@ -238,7 +328,7 @@ agrx <username>/<name> "<prompt>"
 agrx <username>/<repo>/<name>
 ```
 
-The resource type (skill or command) is automatically detected. The resource is downloaded, executed, and cleaned up afterwards.
+The resource is downloaded, executed, and cleaned up automatically.
 
 ### Options
 

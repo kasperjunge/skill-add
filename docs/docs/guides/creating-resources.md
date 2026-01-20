@@ -145,6 +145,62 @@ Creates:
 !!! note
     Legacy resources aren't managed by `agr sync`. Use convention paths for the best workflow.
 
+## PACKAGE.md marker files
+
+For repositories with multiple resources, you can use a `PACKAGE.md` marker file to explicitly define the package namespace. This is useful when:
+
+- Your repository structure doesn't follow conventions
+- You want a custom package name
+- You have resources in non-standard locations
+
+### PACKAGE.md format
+
+Create a `PACKAGE.md` file with YAML frontmatter:
+
+```markdown
+---
+name: my-toolkit
+---
+
+# My Toolkit
+
+Description of your package.
+```
+
+The `name` field determines the namespace used when installing resources from this package.
+
+### Example structure
+
+```
+./
+├── PACKAGE.md          # Contains: name: my-toolkit
+├── skills/
+│   └── helper/
+│       └── SKILL.md
+└── commands/
+    └── build.md
+```
+
+When installed via `agr add`, resources will be namespaced under `my-toolkit`:
+
+```
+.claude/
+├── skills/
+│   └── username:my-toolkit:helper/
+│       └── SKILL.md
+└── commands/
+    └── username/
+        └── my-toolkit/
+            └── build.md
+```
+
+### Validation rules
+
+- The `name` field is required
+- Names must be alphanumeric with hyphens or underscores
+- Names must start and end with an alphanumeric character
+- Nested PACKAGE.md files are not allowed (packages cannot contain other packages)
+
 ## Next steps
 
 Edit the generated markdown to match your workflow, then:

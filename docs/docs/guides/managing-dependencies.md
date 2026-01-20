@@ -8,7 +8,7 @@ Track your project's resources with `agr.toml` and sync them across machines.
 
 ## The agr.toml file
 
-`agr.toml` is a lightweight manifest that declares your project's resource dependencies. It's automatically created and updated when you add or remove resources.
+`agr.toml` declares your project's resource dependencies. It's automatically updated when you add or remove resources.
 
 ```toml
 dependencies = [
@@ -20,10 +20,10 @@ dependencies = [
 
 ### Why use agr.toml?
 
-- **Share dependencies** — Team members can install all project resources with one command
-- **Reproducible setups** — New machines get the same resources as existing ones
-- **Version control friendly** — Track resource changes alongside your code
-- **Clean projects** — Remove resources you no longer need with `--prune`
+- **Share dependencies** — Team members install all resources with `agr sync`
+- **Reproducible setups** — New machines get the same resources
+- **Version control friendly** — Track changes alongside your code
+- **Clean projects** — Remove unused resources with `--prune`
 
 ## Automatic tracking
 
@@ -65,10 +65,11 @@ dependencies = [
     {handle = "kasperjunge/hello-world", type = "skill"},
     {handle = "kasperjunge/review", type = "command"},
     {handle = "kasperjunge/expert", type = "agent"},
+    {handle = "kasperjunge/no-console", type = "rule"},
 ]
 ```
 
-Valid types: `skill`, `command`, `agent`
+Valid types: `skill`, `command`, `agent`, `rule`, `package`
 
 !!! tip
     Explicit types are useful when a resource name exists in multiple types, or to document what each dependency is.
@@ -83,10 +84,10 @@ agr sync
 
 This syncs both:
 
-1. **Local authoring resources** — From `resources/skills/`, `resources/commands/`, `resources/agents/`
+1. **Local resources** — From `resources/skills/`, `resources/commands/`, `resources/agents/`
 2. **Remote dependencies** — From `agr.toml`
 
-Resources that are already installed are skipped.
+Already-installed resources are skipped.
 
 ### Sync only remote dependencies
 
@@ -94,7 +95,7 @@ Resources that are already installed are skipped.
 agr sync --remote
 ```
 
-Skips local authoring resources and only installs dependencies from `agr.toml`.
+Skips local resources and only installs dependencies from `agr.toml`.
 
 ### Sync globally
 
@@ -110,7 +111,7 @@ Syncs resources to `~/.claude/` instead of the current project.
 agr sync --prune
 ```
 
-In addition to installing missing resources, this removes any namespaced resources that aren't listed in `agr.toml`.
+Installs missing resources and removes any namespaced resources not in `agr.toml`.
 
 !!! note
     Pruning only affects resources in namespaced paths (e.g., `.claude/skills/username:skill/`). Resources installed with older versions of agr in flat paths (e.g., `.claude/skills/hello-world/`) are preserved for backward compatibility.
@@ -160,16 +161,73 @@ agr add kasperjunge/hello-world --overwrite
 
 ## Where agr.toml lives
 
-agr looks for `agr.toml` starting from your current directory and searching up to the git root. This means you can run `agr sync` from any subdirectory of your project.
+agr searches for `agr.toml` from your current directory up to the git root, so you can run `agr sync` from any subdirectory.
 
 If no `agr.toml` exists, `agr add` creates one in your current directory.
 
 ## Global dependencies
 
-Global installs (`--global`) don't use `agr.toml` in your project directory. Instead, they're tracked separately in your home directory and synced with:
+Global installs (`--global`) are tracked separately in your home directory:
 
 ```bash
 agr sync --global
 ```
 
-This keeps project-local and global resources separate.
+Project-local and global resources remain separate.
+
+## Multi-tool support
+
+agr can sync resources to multiple AI coding tools (Claude Code, Cursor). Configure target tools in `agr.toml`:
+
+```toml
+[tools]
+targets = ["claude", "cursor"]
+```
+
+### Resolution priority
+
+Target tools are determined by:
+
+1. **CLI `--tool` flags** — Highest priority
+2. **Config `[tools].targets`** — From `agr.toml`
+3. **Auto-detect** — Based on config directories present
+4. **Default** — Claude Code only
+
+### Examples
+
+```bash
+# Sync to configured tools (from agr.toml [tools] section)
+agr sync
+
+# Override config: sync only to Claude
+agr sync --tool claude
+
+# Sync to both Claude and Cursor explicitly
+agr sync --tool claude --tool cursor
+
+# Add a resource to specific tools
+agr add kasperjunge/commit --tool claude --tool cursor
+```
+
+### Multi-tool workflow
+
+A typical multi-tool workflow:
+
+```toml
+# agr.toml
+dependencies = [
+    {handle = "kasperjunge/commit", type = "skill"},
+    {handle = "dsjacobsen/golang-pro", type = "skill"},
+]
+
+[tools]
+targets = ["claude", "cursor"]
+```
+
+```bash
+# Sync all dependencies to both tools
+agr sync
+
+# Check installation status per tool
+agr list --tool claude --tool cursor
+```
