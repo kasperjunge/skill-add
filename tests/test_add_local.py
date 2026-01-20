@@ -432,3 +432,90 @@ class TestNoAutoDetection:
         # Skills installed WITHOUT parent directory prefix (discovery behavior)
         assert "local:skill-a" in result.output
         assert "local:skill-b" in result.output
+
+
+class TestNestedCommandAgentPaths:
+    """Tests for nested command/agent installation paths."""
+
+    def test_command_in_nested_path_installed_to_nested_dir(self, tmp_path: Path, monkeypatch):
+        """Test that commands in nested paths are installed to nested directories."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create nested command structure
+        commands_dir = tmp_path / "commands" / "infra" / "deploy"
+        commands_dir.mkdir(parents=True)
+        cmd_file = commands_dir / "run.md"
+        cmd_file.write_text("# Deploy run command")
+
+        result = runner.invoke(app, ["add", "./commands/infra/deploy/run.md", "--type", "command"])
+
+        assert result.exit_code == 0
+
+        # Verify installed to nested path: .claude/commands/local/infra/deploy/run.md
+        installed = tmp_path / ".claude" / "commands" / "local" / "infra" / "deploy" / "run.md"
+        assert installed.exists()
+
+    def test_agent_in_nested_path_installed_to_nested_dir(self, tmp_path: Path, monkeypatch):
+        """Test that agents in nested paths are installed to nested directories."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create nested agent structure
+        agents_dir = tmp_path / "agents" / "code" / "review"
+        agents_dir.mkdir(parents=True)
+        agent_file = agents_dir / "linter.md"
+        agent_file.write_text("# Code review linter agent")
+
+        result = runner.invoke(app, ["add", "./agents/code/review/linter.md", "--type", "agent"])
+
+        assert result.exit_code == 0
+
+        # Verify installed to nested path: .claude/agents/local/code/review/linter.md
+        installed = tmp_path / ".claude" / "agents" / "local" / "code" / "review" / "linter.md"
+        assert installed.exists()
+
+    def test_package_with_nested_commands_explodes_to_nested_dirs(self, tmp_path: Path, monkeypatch):
+        """Test that packages with nested commands preserve the nested structure."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create package with nested commands
+        pkg_dir = tmp_path / "packages" / "toolkit"
+        pkg_dir.mkdir(parents=True)
+
+        # Add nested commands
+        cmds_dir = pkg_dir / "commands" / "infra"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "deploy.md").write_text("# Deploy")
+
+        # Add a skill so package is not empty
+        skills_dir = pkg_dir / "skills" / "helper"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("# Helper")
+
+        (pkg_dir / "agents").mkdir()
+
+        result = runner.invoke(app, ["add", "./packages/toolkit", "--type", "package"])
+
+        assert result.exit_code == 0
+
+        # Verify command installed to nested path: .claude/commands/local/toolkit/infra/deploy.md
+        installed_cmd = tmp_path / ".claude" / "commands" / "local" / "toolkit" / "infra" / "deploy.md"
+        assert installed_cmd.exists()
+
+    def test_flat_command_still_works(self, tmp_path: Path, monkeypatch):
+        """Test that commands at root level still work as before."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        # Create flat command
+        (tmp_path / "commit.md").write_text("# Commit command")
+
+        result = runner.invoke(app, ["add", "./commit.md", "--type", "command"])
+
+        assert result.exit_code == 0
+
+        # Verify installed to flat path: .claude/commands/local/commit.md
+        installed = tmp_path / ".claude" / "commands" / "local" / "commit.md"
+        assert installed.exists()

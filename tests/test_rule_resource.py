@@ -86,15 +86,16 @@ class TestParsedHandleToRulePath:
         result = handle.to_rule_path(Path("/home/user/.claude"))
         assert result == Path("/home/user/.claude/rules/user/rule.md")
 
-    def test_to_rule_path_uses_simple_name(self):
-        """Test rule path uses simple_name for nested segments."""
+    def test_to_rule_path_includes_nested_path(self):
+        """Test rule path includes nested path segments."""
         handle = ParsedHandle(
             username="user",
             name="ignored",
             path_segments=["nested", "actual"],
         )
         result = handle.to_rule_path(Path(".claude"))
-        assert result == Path(".claude/rules/user/actual.md")
+        # New behavior: includes full path structure
+        assert result == Path(".claude/rules/user/nested/actual.md")
 
 
 class TestToResourcePathRule:

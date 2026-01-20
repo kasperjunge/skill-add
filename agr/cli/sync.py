@@ -103,21 +103,22 @@ def _discover_installed_namespaced_resources(
                     toml_handle = skill_dirname_to_toml_handle(skill_dir.name)
                     installed.add(toml_handle)
 
-    # Check commands (nested format: username/name.md)
-    commands_dir = base_path / "commands"
-    if commands_dir.is_dir():
-        for username_dir in commands_dir.iterdir():
-            if username_dir.is_dir():
-                for cmd_file in username_dir.glob("*.md"):
-                    installed.add(f"{username_dir.name}/{cmd_file.stem}")
-
-    # Check agents (nested format: username/name.md)
-    agents_dir = base_path / "agents"
-    if agents_dir.is_dir():
-        for username_dir in agents_dir.iterdir():
-            if username_dir.is_dir():
-                for agent_file in username_dir.glob("*.md"):
-                    installed.add(f"{username_dir.name}/{agent_file.stem}")
+    # Check commands and agents (nested format: username/[path/]name.md)
+    for type_dir in ["commands", "agents"]:
+        type_path = base_path / type_dir
+        if not type_path.is_dir():
+            continue
+        for username_dir in type_path.iterdir():
+            if not username_dir.is_dir():
+                continue
+            for md_file in username_dir.rglob("*.md"):
+                # Build relative path from username dir
+                # e.g., pkg/infra/deploy.md -> pkg/infra/deploy
+                rel_path = md_file.relative_to(username_dir)
+                parts = list(rel_path.parts)
+                parts[-1] = rel_path.stem  # Remove .md extension
+                handle_path = "/".join(parts)
+                installed.add(f"{username_dir.name}/{handle_path}")
 
     return installed
 
@@ -206,9 +207,18 @@ def _sync_local_dependency(
         dest_path = base_path / subdir / flattened_name
         name = flattened_name
     else:
-        # Commands/agents are files: .claude/commands/{username}/{name}.md
+        # Commands/agents are files - include nested path structure
+        path_segments = compute_path_segments(source_path)
         name = source_path.stem
-        dest_path = base_path / subdir / username / f"{name}.md"
+        if package_name:
+            all_segments = [package_name] + path_segments
+        else:
+            all_segments = path_segments
+        nested_dirs = all_segments[:-1]
+        if nested_dirs:
+            dest_path = base_path / subdir / username / Path(*nested_dirs) / f"{name}.md"
+        else:
+            dest_path = base_path / subdir / username / f"{name}.md"
 
     try:
         is_update = dest_path.exists()

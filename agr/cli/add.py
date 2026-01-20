@@ -164,23 +164,20 @@ def _explode_package(
             update_skill_md_name(dest, flattened_name)
             counts["skills"] += 1
 
-    # Commands - keep existing structure (not affected by Claude Code discovery issue)
-    cmds_dir = package_path / "commands"
-    if cmds_dir.is_dir():
-        for cmd in cmds_dir.glob("*.md"):
-            dest = base_path / "commands" / username / package_name / cmd.name
+    # Commands and agents - use rglob and preserve nested paths
+    for type_name, type_dir in [("commands", "commands"), ("agents", "agents")]:
+        source_dir = package_path / type_dir
+        if not source_dir.is_dir():
+            continue
+        for md_file in source_dir.rglob("*.md"):
+            rel_parts = list(md_file.parent.relative_to(source_dir).parts)
+            if rel_parts and rel_parts != ["."]:
+                dest = base_path / type_dir / username / package_name / Path(*rel_parts) / md_file.name
+            else:
+                dest = base_path / type_dir / username / package_name / md_file.name
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(cmd, dest)
-            counts["commands"] += 1
-
-    # Agents - keep existing structure (not affected by Claude Code discovery issue)
-    agents_dir = package_path / "agents"
-    if agents_dir.is_dir():
-        for agent in agents_dir.glob("*.md"):
-            dest = base_path / "agents" / username / package_name / agent.name
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(agent, dest)
-            counts["agents"] += 1
+            shutil.copy2(md_file, dest)
+            counts[type_name] += 1
 
     return counts
 
@@ -220,9 +217,18 @@ def _install_local_resource(
         dest_path = base_path / subdir / flattened_name
         name = flattened_name
     else:
-        # Commands and agents are files
+        # Commands and agents are files - include nested path structure
+        path_segments = compute_path_segments(source_path)
         name = source_path.stem
-        dest_path = base_path / subdir / username / f"{name}.md"
+        if package_name:
+            all_segments = [package_name] + path_segments
+        else:
+            all_segments = path_segments
+        nested_dirs = all_segments[:-1]
+        if nested_dirs:
+            dest_path = base_path / subdir / username / Path(*nested_dirs) / f"{name}.md"
+        else:
+            dest_path = base_path / subdir / username / f"{name}.md"
 
     # Remove existing if present
     if dest_path.exists():

@@ -117,44 +117,68 @@ class ParsedHandle:
             return base_path / "skills" / self.name
         return base_path / "skills" / self.to_skill_dirname()
 
+    def _to_nested_md_path(self, base_path: Path, type_dir: str) -> Path:
+        """Build nested path for .md file resources (commands, agents, rules).
+
+        Args:
+            base_path: Base directory (e.g., Path(".claude"))
+            type_dir: Type subdirectory name (e.g., "commands", "agents", "rules")
+
+        Returns:
+            Path in format: base_path/{type_dir}/{username}/{nested_dirs}/{name}.md
+        """
+        filename = f"{self.simple_name}.md"
+        if not self.username:
+            return base_path / type_dir / filename
+        nested_dirs = self.path_segments[:-1] if self.path_segments else []
+        if nested_dirs:
+            return base_path / type_dir / self.username / Path(*nested_dirs) / filename
+        return base_path / type_dir / self.username / filename
+
     def to_command_path(self, base_path: Path) -> Path:
-        """Build command path: base_path/commands/{username}/{name}.md or base_path/commands/{name}.md.
+        """Build command path: base_path/commands/{username}/{path}/{name}.md or base_path/commands/{name}.md.
+
+        Includes full path_segments for nested directory structure.
 
         Examples:
             >>> ParsedHandle(username="kasperjunge", name="commit", path_segments=["commit"]).to_command_path(Path(".claude"))
             PosixPath('.claude/commands/kasperjunge/commit.md')
             >>> ParsedHandle(name="commit", path_segments=["commit"]).to_command_path(Path(".claude"))
             PosixPath('.claude/commands/commit.md')
+            >>> ParsedHandle(username="user", name="deploy", path_segments=["pkg", "infra", "deploy"]).to_command_path(Path(".claude"))
+            PosixPath('.claude/commands/user/pkg/infra/deploy.md')
         """
-        if not self.username:
-            return base_path / "commands" / f"{self.simple_name}.md"
-        return base_path / "commands" / self.username / f"{self.simple_name}.md"
+        return self._to_nested_md_path(base_path, "commands")
 
     def to_agent_path(self, base_path: Path) -> Path:
-        """Build agent path: base_path/agents/{username}/{name}.md or base_path/agents/{name}.md.
+        """Build agent path: base_path/agents/{username}/{path}/{name}.md or base_path/agents/{name}.md.
+
+        Includes full path_segments for nested directory structure.
 
         Examples:
             >>> ParsedHandle(username="kasperjunge", name="reviewer", path_segments=["reviewer"]).to_agent_path(Path(".claude"))
             PosixPath('.claude/agents/kasperjunge/reviewer.md')
             >>> ParsedHandle(name="reviewer", path_segments=["reviewer"]).to_agent_path(Path(".claude"))
             PosixPath('.claude/agents/reviewer.md')
+            >>> ParsedHandle(username="user", name="deploy", path_segments=["pkg", "infra", "deploy"]).to_agent_path(Path(".claude"))
+            PosixPath('.claude/agents/user/pkg/infra/deploy.md')
         """
-        if not self.username:
-            return base_path / "agents" / f"{self.simple_name}.md"
-        return base_path / "agents" / self.username / f"{self.simple_name}.md"
+        return self._to_nested_md_path(base_path, "agents")
 
     def to_rule_path(self, base_path: Path) -> Path:
-        """Build rule path: base_path/rules/{username}/{name}.md or base_path/rules/{name}.md.
+        """Build rule path: base_path/rules/{username}/{path}/{name}.md or base_path/rules/{name}.md.
+
+        Includes full path_segments for nested directory structure.
 
         Examples:
             >>> ParsedHandle(username="kasperjunge", name="no-console", path_segments=["no-console"]).to_rule_path(Path(".claude"))
             PosixPath('.claude/rules/kasperjunge/no-console.md')
             >>> ParsedHandle(name="no-console", path_segments=["no-console"]).to_rule_path(Path(".claude"))
             PosixPath('.claude/rules/no-console.md')
+            >>> ParsedHandle(username="user", name="lint", path_segments=["pkg", "code", "lint"]).to_rule_path(Path(".claude"))
+            PosixPath('.claude/rules/user/pkg/code/lint.md')
         """
-        if not self.username:
-            return base_path / "rules" / f"{self.simple_name}.md"
-        return base_path / "rules" / self.username / f"{self.simple_name}.md"
+        return self._to_nested_md_path(base_path, "rules")
 
     def to_resource_path(self, base_path: Path, resource_type: str) -> Path:
         """Build resource path based on type (skill, command, agent, rule).

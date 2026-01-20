@@ -292,15 +292,25 @@ class TestParsedHandleToCommandPath:
         result = handle.to_command_path(Path(".claude"))
         assert result == Path(".claude/commands/commit.md")
 
-    def test_uses_simple_name(self):
-        """Test command path uses simple_name for nested segments."""
+    def test_with_nested_path_segments(self):
+        """Test command path with nested segments includes full path."""
         handle = ParsedHandle(
             username="user",
-            name="ignored",
-            path_segments=["nested", "actual"],
+            name="deploy",
+            path_segments=["pkg", "infra", "deploy"],
         )
         result = handle.to_command_path(Path(".claude"))
-        assert result == Path(".claude/commands/user/actual.md")
+        assert result == Path(".claude/commands/user/pkg/infra/deploy.md")
+
+    def test_with_two_segment_path(self):
+        """Test command path with two segments (package + name)."""
+        handle = ParsedHandle(
+            username="user",
+            name="build",
+            path_segments=["toolkit", "build"],
+        )
+        result = handle.to_command_path(Path(".claude"))
+        assert result == Path(".claude/commands/user/toolkit/build.md")
 
 
 class TestParsedHandleToAgentPath:
@@ -317,6 +327,62 @@ class TestParsedHandleToAgentPath:
         handle = ParsedHandle(name="reviewer", path_segments=["reviewer"])
         result = handle.to_agent_path(Path(".claude"))
         assert result == Path(".claude/agents/reviewer.md")
+
+    def test_with_nested_path_segments(self):
+        """Test agent path with nested segments includes full path."""
+        handle = ParsedHandle(
+            username="user",
+            name="reviewer",
+            path_segments=["pkg", "code", "reviewer"],
+        )
+        result = handle.to_agent_path(Path(".claude"))
+        assert result == Path(".claude/agents/user/pkg/code/reviewer.md")
+
+    def test_with_two_segment_path(self):
+        """Test agent path with two segments (package + name)."""
+        handle = ParsedHandle(
+            username="user",
+            name="test-runner",
+            path_segments=["toolkit", "test-runner"],
+        )
+        result = handle.to_agent_path(Path(".claude"))
+        assert result == Path(".claude/agents/user/toolkit/test-runner.md")
+
+
+class TestParsedHandleToRulePath:
+    """Test rule path building with nested format."""
+
+    def test_with_username(self):
+        """Test rule path with username uses nested format."""
+        handle = ParsedHandle(username="kasperjunge", name="no-console", path_segments=["no-console"])
+        result = handle.to_rule_path(Path(".claude"))
+        assert result == Path(".claude/rules/kasperjunge/no-console.md")
+
+    def test_without_username(self):
+        """Test rule path without username uses flat format."""
+        handle = ParsedHandle(name="no-console", path_segments=["no-console"])
+        result = handle.to_rule_path(Path(".claude"))
+        assert result == Path(".claude/rules/no-console.md")
+
+    def test_with_nested_path_segments(self):
+        """Test rule path with nested segments includes full path."""
+        handle = ParsedHandle(
+            username="user",
+            name="lint",
+            path_segments=["pkg", "code", "lint"],
+        )
+        result = handle.to_rule_path(Path(".claude"))
+        assert result == Path(".claude/rules/user/pkg/code/lint.md")
+
+    def test_with_two_segment_path(self):
+        """Test rule path with two segments (package + name)."""
+        handle = ParsedHandle(
+            username="user",
+            name="style",
+            path_segments=["toolkit", "style"],
+        )
+        result = handle.to_rule_path(Path(".claude"))
+        assert result == Path(".claude/rules/user/toolkit/style.md")
 
 
 class TestParsedHandleToResourcePath:
@@ -339,6 +405,18 @@ class TestParsedHandleToResourcePath:
         handle = ParsedHandle(username="user", name="agent", path_segments=["agent"])
         result = handle.to_resource_path(Path(".claude"), "agent")
         assert result == Path(".claude/agents/user/agent.md")
+
+    def test_rule_type(self):
+        """Test resource path for rule type."""
+        handle = ParsedHandle(username="user", name="rule", path_segments=["rule"])
+        result = handle.to_resource_path(Path(".claude"), "rule")
+        assert result == Path(".claude/rules/user/rule.md")
+
+    def test_nested_command_type(self):
+        """Test resource path for command type with nested segments."""
+        handle = ParsedHandle(username="user", name="deploy", path_segments=["pkg", "infra", "deploy"])
+        result = handle.to_resource_path(Path(".claude"), "command")
+        assert result == Path(".claude/commands/user/pkg/infra/deploy.md")
 
     def test_unknown_type_raises(self):
         """Test that unknown type raises ValueError."""

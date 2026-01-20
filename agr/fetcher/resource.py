@@ -54,9 +54,14 @@ def fetch_resource_from_repo_dir(
         flattened_name = compute_flattened_skill_name(username, path_segments)
         resource_dest = dest / flattened_name
     elif username:
-        # Commands/agents: .claude/commands/username/name.md
+        # Commands/agents: .claude/commands/username/[path/]name.md
+        # Include full path_segments for nested directory structure
         namespaced_dest = dest / username
-        resource_dest = _build_resource_path(namespaced_dest, config, path_segments)
+        nested_dirs = path_segments[:-1] if path_segments else []
+        if nested_dirs:
+            resource_dest = _build_resource_path(namespaced_dest / Path(*nested_dirs), config, [path_segments[-1]])
+        else:
+            resource_dest = _build_resource_path(namespaced_dest, config, path_segments)
     else:
         # Flat path (backward compat): .claude/skills/name/
         resource_dest = _build_resource_path(dest, config, path_segments)
@@ -102,9 +107,8 @@ def fetch_resource_from_repo_dir(
     # Copy resource to destination
     if config.is_directory:
         shutil.copytree(resource_source, resource_dest)
-        # Update SKILL.md name field for skills
+        # Update SKILL.md name field for skills (flattened_name already computed above)
         if username:
-            flattened_name = compute_flattened_skill_name(username, path_segments)
             update_skill_md_name(resource_dest, flattened_name)
     else:
         shutil.copy2(resource_source, resource_dest)
