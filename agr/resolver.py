@@ -15,6 +15,37 @@ from tomlkit.exceptions import TOMLKitError
 
 from agr.constants import TOOL_DIR_NAME, SKILLS_SUBDIR, COMMANDS_SUBDIR, AGENTS_SUBDIR
 from agr.fetcher import ResourceType
+from agr.package import parse_package_md
+
+
+def _find_package_context_in_repo(repo_dir: Path, resource_path: Path) -> str | None:
+    """Walk up from resource_path looking for PACKAGE.md within repo_dir.
+
+    Args:
+        repo_dir: Path to extracted repository (boundary)
+        resource_path: Path to the resource (relative to repo_dir)
+
+    Returns:
+        Package name from PACKAGE.md if found, None otherwise
+    """
+    repo_dir = repo_dir.resolve()
+    full_resource_path = (repo_dir / resource_path).resolve()
+    current = full_resource_path if full_resource_path.is_dir() else full_resource_path.parent
+
+    while current != current.parent:
+        if current == repo_dir or not str(current).startswith(str(repo_dir)):
+            break
+
+        package_md = current / "PACKAGE.md"
+        if package_md.exists():
+            metadata = parse_package_md(package_md)
+            if metadata.valid and metadata.name:
+                return metadata.name
+            return None
+
+        current = current.parent
+
+    return None
 
 
 class ResourceSource(Enum):
@@ -35,6 +66,7 @@ class ResolvedResource:
         path: Path to the resource (relative to repo root)
         source: Where the resource was resolved from
         is_package: Whether this is a package/bundle
+        package_name: Package context from PACKAGE.md if found
     """
 
     name: str
@@ -42,6 +74,7 @@ class ResolvedResource:
     path: Path
     source: ResourceSource
     is_package: bool = False
+    package_name: str | None = None
 
 
 def _extract_resource_name(path_str: str) -> str:
@@ -209,12 +242,16 @@ def _resolve_from_agr_toml(
     else:
         resource_type = _detect_type_from_path(repo_dir, path)
 
+    # Check for package context
+    package_name = _find_package_context_in_repo(repo_dir, path)
+
     return ResolvedResource(
         name=name,
         resource_type=resource_type,
         path=path,
         source=ResourceSource.AGR_TOML,
         is_package=is_package,
+        package_name=package_name,
     )
 
 
@@ -239,73 +276,59 @@ def _resolve_from_claude_dir(repo_dir: Path, name: str) -> ResolvedResource | No
     # Check for skill
     skill_path = claude_dir / SKILLS_SUBDIR / name
     if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
+        rel_path = Path(TOOL_DIR_NAME) / SKILLS_SUBDIR / name
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.SKILL,
-            path=Path(TOOL_DIR_NAME) / SKILLS_SUBDIR / name,
+            path=rel_path,
             source=ResourceSource.CLAUDE_DIR,
+            package_name=package_name,
         )
 
     # Check for command
     command_path = claude_dir / COMMANDS_SUBDIR / f"{name}.md"
     if command_path.is_file():
+        rel_path = Path(TOOL_DIR_NAME) / COMMANDS_SUBDIR / f"{name}.md"
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.COMMAND,
-            path=Path(TOOL_DIR_NAME) / COMMANDS_SUBDIR / f"{name}.md",
+            path=rel_path,
             source=ResourceSource.CLAUDE_DIR,
+            package_name=package_name,
         )
 
     # Check for agent
     agent_path = claude_dir / AGENTS_SUBDIR / f"{name}.md"
     if agent_path.is_file():
+        rel_path = Path(TOOL_DIR_NAME) / AGENTS_SUBDIR / f"{name}.md"
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.AGENT,
-            path=Path(TOOL_DIR_NAME) / AGENTS_SUBDIR / f"{name}.md",
+            path=rel_path,
             source=ResourceSource.CLAUDE_DIR,
+            package_name=package_name,
         )
 
-    # Check for bundle (directory with nested resources)
-    # A bundle exists if there are subdirectories with resources in skills/
-    bundle_skills_path = claude_dir / SKILLS_SUBDIR / name
-    if bundle_skills_path.is_dir():
-        # Check if any subdirectory has SKILL.md (making it a bundle)
-        for subdir in bundle_skills_path.iterdir():
-            if subdir.is_dir() and (subdir / "SKILL.md").exists():
-                return ResolvedResource(
-                    name=name,
-                    resource_type=None,  # Bundles don't have a single type
-                    path=Path(TOOL_DIR_NAME) / SKILLS_SUBDIR / name,
-                    source=ResourceSource.CLAUDE_DIR,
-                    is_package=True,
-                )
-
-    # Check for bundle in commands/
-    bundle_commands_path = claude_dir / COMMANDS_SUBDIR / name
-    if bundle_commands_path.is_dir():
-        # Check if directory contains .md files
-        md_files = list(bundle_commands_path.glob("*.md"))
-        if md_files:
+    # Check for bundles (directories with nested resources)
+    # Bundles don't inherit package context - they are the grouping themselves
+    bundle_checks = [
+        (SKILLS_SUBDIR, lambda p: any(s.is_dir() and (s / "SKILL.md").exists() for s in p.iterdir())),
+        (COMMANDS_SUBDIR, lambda p: any(p.glob("*.md"))),
+        (AGENTS_SUBDIR, lambda p: any(p.glob("*.md"))),
+    ]
+    for subdir, has_resources in bundle_checks:
+        bundle_path = claude_dir / subdir / name
+        if bundle_path.is_dir() and has_resources(bundle_path):
             return ResolvedResource(
                 name=name,
                 resource_type=None,
-                path=Path(TOOL_DIR_NAME) / COMMANDS_SUBDIR / name,
+                path=Path(TOOL_DIR_NAME) / subdir / name,
                 source=ResourceSource.CLAUDE_DIR,
                 is_package=True,
-            )
-
-    # Check for bundle in agents/
-    bundle_agents_path = claude_dir / AGENTS_SUBDIR / name
-    if bundle_agents_path.is_dir():
-        md_files = list(bundle_agents_path.glob("*.md"))
-        if md_files:
-            return ResolvedResource(
-                name=name,
-                resource_type=None,
-                path=Path(TOOL_DIR_NAME) / AGENTS_SUBDIR / name,
-                source=ResourceSource.CLAUDE_DIR,
-                is_package=True,
+                package_name=None,
             )
 
     return None
@@ -344,11 +367,13 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
     # 1. Check for skill at exact path: {nested_path}/SKILL.md
     skill_path = repo_dir / nested_path
     if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
+        package_name = _find_package_context_in_repo(repo_dir, nested_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.SKILL,
             path=nested_path,
             source=ResourceSource.REPO_ROOT,
+            package_name=package_name,
         )
 
     # 2. Search for skill anywhere in repo: **/{nested_path}/SKILL.md
@@ -359,11 +384,13 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
         rel_path = skill_md.parent.relative_to(repo_dir)
         if str(rel_path).startswith(TOOL_DIR_NAME):
             continue
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.SKILL,
             path=rel_path,
             source=ResourceSource.REPO_ROOT,
+            package_name=package_name,
         )
 
     # 3. Check for command in commands/ directory
@@ -378,11 +405,13 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
         # Skip .claude/ directory
         if str(rel_path).startswith(TOOL_DIR_NAME):
             continue
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.COMMAND,
             path=rel_path,
             source=ResourceSource.REPO_ROOT,
+            package_name=package_name,
         )
 
     # 4. Check for agent in agents/ directory
@@ -396,11 +425,13 @@ def _resolve_from_repo_root(repo_dir: Path, name: str) -> ResolvedResource | Non
         # Skip .claude/ directory
         if str(rel_path).startswith(TOOL_DIR_NAME):
             continue
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
         return ResolvedResource(
             name=name,
             resource_type=ResourceType.AGENT,
             path=rel_path,
             source=ResourceSource.REPO_ROOT,
+            package_name=package_name,
         )
 
     return None

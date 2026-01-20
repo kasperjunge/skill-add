@@ -6,7 +6,7 @@ from pathlib import Path
 from agr.exceptions import ResourceExistsError, ResourceNotFoundError
 from agr.fetcher.download import _build_resource_path, downloaded_repo
 from agr.fetcher.types import RESOURCE_CONFIGS, ResourceType
-from agr.utils import compute_flattened_skill_name, update_skill_md_name
+from agr.utils import compute_flattened_resource_name, update_skill_md_name
 
 
 def fetch_resource_from_repo_dir(
@@ -18,6 +18,7 @@ def fetch_resource_from_repo_dir(
     overwrite: bool = False,
     username: str | None = None,
     source_path: Path | None = None,
+    package_name: str | None = None,
 ) -> Path:
     """
     Fetch a resource from an already-downloaded repo directory.
@@ -37,6 +38,10 @@ def fetch_resource_from_repo_dir(
         source_path: Explicit source path (relative to repo root) from resolver.
                      If provided, uses this instead of building from path_segments.
                      This is used when the resource location is specified in agr.toml.
+        package_name: Package name from PACKAGE.md for additional namespacing.
+                      When provided, adds package context to the installed path:
+                      - Skills: dest/username:package:name/
+                      - Commands/agents: dest/username/package/name.md
 
     Returns:
         Path to the installed resource
@@ -50,13 +55,15 @@ def fetch_resource_from_repo_dir(
     # Build destination path - skills use flattened colon-namespaced names
     if username and config.is_directory:
         # Skills: .claude/skills/<flattened_name>/
-        # e.g., .claude/skills/kasperjunge:commit/ or .claude/skills/kasperjunge:product:growth-hacker/
-        flattened_name = compute_flattened_skill_name(username, path_segments)
+        # e.g., .claude/skills/kasperjunge:commit/ or .claude/skills/kasperjunge:package:skill/
+        flattened_name = compute_flattened_resource_name(username, path_segments, package_name)
         resource_dest = dest / flattened_name
     elif username:
-        # Commands/agents: .claude/commands/username/[path/]name.md
-        # Include full path_segments for nested directory structure
+        # Commands/agents: .claude/commands/username/[package/][path/]name.md
+        # Include package_name and full path_segments for nested directory structure
         namespaced_dest = dest / username
+        if package_name:
+            namespaced_dest = namespaced_dest / package_name
         nested_dirs = path_segments[:-1] if path_segments else []
         if nested_dirs:
             resource_dest = _build_resource_path(namespaced_dest / Path(*nested_dirs), config, [path_segments[-1]])

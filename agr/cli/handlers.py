@@ -597,6 +597,7 @@ def handle_add_unified(
                             repo_dir, name, path_segments, dest, resolved.resource_type, overwrite,
                             username=username,
                             source_path=resolved.path,
+                            package_name=resolved.package_name,
                         )
                         print_success_message(
                             resolved.resource_type.value, name, username, repo_name,
