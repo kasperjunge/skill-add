@@ -21,6 +21,7 @@ from agr.cli.common import (
 from agr.config import Dependency, get_or_create_config
 from agr.fetcher import ResourceType
 from agr.github import get_username_from_git_remote
+from agr.package import parse_package_md, validate_no_nested_packages
 from agr.utils import compute_flattened_skill_name, compute_path_segments_from_skill_path, update_skill_md_name
 
 # Deprecated subcommand names
@@ -80,57 +81,56 @@ def _is_glob_pattern(ref: str) -> bool:
     return "*" in ref or "?" in ref or "[" in ref
 
 
+def _has_resource_subdirs(path: Path) -> bool:
+    """Check if path has skills/, commands/, or agents/ subdirectories."""
+    return any((path / d).is_dir() for d in ("skills", "commands", "agents"))
+
+
 def _detect_local_type(path: Path) -> str | None:
     """Detect resource type from a local path.
 
     Returns "skill", "command", "agent", "package", "namespace", or None if unknown.
     Auto-detects based on:
+    - Directory with PACKAGE.md -> package (highest priority)
     - Directory with SKILL.md -> skill
     - File with .md extension -> command (or agent if in agents/ dir)
     - Directory in packages/ -> package
     - Directory with skills/, commands/, or agents/ subdirs -> package
-    - Directory containing only skill subdirectories -> namespace
+    - Directory containing skill subdirectories at any depth -> namespace
     """
-    path_str = str(path)
-
-    # Check if in packages/ directory
-    if "packages/" in path_str or path_str.startswith("packages"):
-        if path.is_dir():
-            # Check if it's a package directory (has subdirs for resources)
-            has_subdirs = any(
-                (path / d).is_dir() for d in ["skills", "commands", "agents"]
-            )
-            if has_subdirs:
-                return "package"
-            # Might be a skill inside a package
-            if (path / "SKILL.md").exists():
-                return "skill"
-        return "package"
-
-    # Check for skill directory
-    if path.is_dir() and (path / "SKILL.md").exists():
-        return "skill"
-
-    # Check for command/agent file
-    if path.is_file() and path.suffix == ".md":
-        # Detect agent vs command from parent directory name
+    # Handle files first
+    if path.is_file():
+        if path.suffix != ".md":
+            return None
+        path_str = str(path)
         if path.parent.name == "agents" or "agents/" in path_str:
             return "agent"
         return "command"
 
-    # Check for package directory
-    if path.is_dir():
-        has_subdirs = any(
-            (path / d).is_dir() for d in ["skills", "commands", "agents"]
-        )
-        if has_subdirs:
-            return "package"
+    # From here on, path is a directory
+    if not path.is_dir():
+        return None
 
-        # Check for namespace containing skills (recursively, not just direct children)
-        # A namespace is a directory that contains skill directories at any depth
-        has_nested_skills = any(path.rglob("SKILL.md"))
-        if has_nested_skills:
-            return "namespace"
+    # PACKAGE.md marker has highest priority
+    if (path / "PACKAGE.md").exists():
+        return "package"
+
+    # Skill directory (contains SKILL.md)
+    if (path / "SKILL.md").exists():
+        return "skill"
+
+    # Directory with resource subdirs is a package
+    if _has_resource_subdirs(path):
+        return "package"
+
+    # Check if in packages/ directory
+    path_str = str(path)
+    if "packages/" in path_str or path_str.startswith("packages"):
+        return "package"
+
+    # Namespace: directory containing skills at any depth
+    if any(path.rglob("SKILL.md")):
+        return "namespace"
 
     return None
 
@@ -215,12 +215,19 @@ def _explode_package(
     Args:
         package_path: Path to the package directory
         username: Username for namespacing
-        package_name: Name of the package
+        package_name: Name of the package (may be overridden by PACKAGE.md)
         base_path: Base .claude/ path
 
     Returns:
         Dict with counts of installed resources by type
     """
+    # Check for PACKAGE.md and use its name if present
+    package_md = package_path / "PACKAGE.md"
+    if package_md.exists():
+        metadata = parse_package_md(package_md)
+        if metadata.valid and metadata.name:
+            package_name = metadata.name
+
     counts = {"skills": 0, "commands": 0, "agents": 0}
 
     # Skills - use flattened names with recursive discovery for nested skills
@@ -317,6 +324,47 @@ def _install_local_resource(
     return name
 
 
+def _validate_package(pkg_path: Path) -> None:
+    """Validate a package directory before installation.
+
+    Checks:
+    - PACKAGE.md is valid if present
+    - No nested PACKAGE.md files exist
+    - Package contains at least one resource
+
+    Args:
+        pkg_path: Path to the package directory
+
+    Raises:
+        SystemExit: If validation fails
+    """
+    package_md = pkg_path / "PACKAGE.md"
+    if package_md.exists():
+        metadata = parse_package_md(package_md)
+        if not metadata.valid:
+            error_exit(f"Invalid PACKAGE.md: {metadata.error}")
+
+        nested = validate_no_nested_packages(pkg_path)
+        if nested:
+            nested_paths = ", ".join(str(p.relative_to(pkg_path)) for p in nested)
+            error_exit(
+                f"Found nested PACKAGE.md files in package '{pkg_path.name}':\n"
+                f"  {nested_paths}\n"
+                "Packages cannot contain other packages."
+            )
+
+    # Check package has at least one resource
+    has_skills = (pkg_path / "skills").is_dir() and any((pkg_path / "skills").rglob("SKILL.md"))
+    has_commands = (pkg_path / "commands").is_dir() and any((pkg_path / "commands").glob("*.md"))
+    has_agents = (pkg_path / "agents").is_dir() and any((pkg_path / "agents").glob("*.md"))
+
+    if not (has_skills or has_commands or has_agents):
+        error_exit(
+            f"Package '{pkg_path.name}' contains no resources.\n"
+            "Add skills, commands, or agents to the package first."
+        )
+
+
 def handle_add_local(
     local_path: str,
     resource_type: str | None,
@@ -352,19 +400,9 @@ def handle_add_local(
             "Use --type to specify: skill, command, agent, or package"
         )
 
-    # Validate that packages are not empty
+    # Validate packages
     if resource_type == "package":
-        pkg_path = path
-        has_resources = any([
-            any((pkg_path / "skills").rglob("SKILL.md")) if (pkg_path / "skills").is_dir() else False,
-            any((pkg_path / "commands").glob("*.md")) if (pkg_path / "commands").is_dir() else False,
-            any((pkg_path / "agents").glob("*.md")) if (pkg_path / "agents").is_dir() else False,
-        ])
-        if not has_resources:
-            error_exit(
-                f"Package '{pkg_path.name}' contains no resources.\n"
-                "Add skills, commands, or agents to the package first."
-            )
+        _validate_package(path)
 
     name = path.stem if path.is_file() else path.name
 
