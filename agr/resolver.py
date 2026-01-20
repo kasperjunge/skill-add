@@ -465,3 +465,210 @@ def resolve_remote_resource(repo_dir: Path, name: str) -> ResolvedResource | Non
 
     # Third, auto-discover anywhere in repo
     return _resolve_from_repo_root(repo_dir, name)
+
+
+def _discover_all_from_agr_toml(repo_dir: Path) -> list[ResolvedResource]:
+    """Discover all resources declared in agr.toml with 'path' key.
+
+    Args:
+        repo_dir: Path to repository root
+
+    Returns:
+        List of ResolvedResource for each local path dependency
+    """
+    resources = []
+    agr_resources = parse_remote_agr_toml(repo_dir)
+
+    for name, config in agr_resources.items():
+        path_str = config.get("path")
+        if not path_str:
+            continue
+
+        path = Path(path_str)
+        is_package = config.get("package", False)
+
+        # Determine resource type
+        type_str = config.get("type")
+        if type_str:
+            type_map = {
+                "skill": ResourceType.SKILL,
+                "command": ResourceType.COMMAND,
+                "agent": ResourceType.AGENT,
+            }
+            resource_type = type_map.get(type_str)
+        else:
+            resource_type = _detect_type_from_path(repo_dir, path)
+
+        # Skip packages for now - they're complex
+        if is_package:
+            continue
+
+        # Check for package context
+        package_name = _find_package_context_in_repo(repo_dir, path)
+
+        resources.append(
+            ResolvedResource(
+                name=name,
+                resource_type=resource_type,
+                path=path,
+                source=ResourceSource.AGR_TOML,
+                is_package=is_package,
+                package_name=package_name,
+            )
+        )
+
+    return resources
+
+
+def _discover_all_from_claude_dir(repo_dir: Path) -> list[ResolvedResource]:
+    """Discover all resources in .claude/ directory structure.
+
+    Scans:
+    - .claude/skills/*/ (directories with SKILL.md)
+    - .claude/commands/*.md
+    - .claude/agents/*.md
+
+    Args:
+        repo_dir: Path to repository root
+
+    Returns:
+        List of ResolvedResource for each resource found
+    """
+    resources = []
+    claude_dir = repo_dir / TOOL_DIR_NAME
+
+    if not claude_dir.is_dir():
+        return resources
+
+    # Discover skills
+    skills_dir = claude_dir / SKILLS_SUBDIR
+    if skills_dir.is_dir():
+        for skill_dir in skills_dir.iterdir():
+            if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
+                rel_path = Path(TOOL_DIR_NAME) / SKILLS_SUBDIR / skill_dir.name
+                package_name = _find_package_context_in_repo(repo_dir, rel_path)
+                resources.append(
+                    ResolvedResource(
+                        name=skill_dir.name,
+                        resource_type=ResourceType.SKILL,
+                        path=rel_path,
+                        source=ResourceSource.CLAUDE_DIR,
+                        package_name=package_name,
+                    )
+                )
+
+    # Discover commands
+    commands_dir = claude_dir / COMMANDS_SUBDIR
+    if commands_dir.is_dir():
+        for cmd_file in commands_dir.glob("*.md"):
+            rel_path = Path(TOOL_DIR_NAME) / COMMANDS_SUBDIR / cmd_file.name
+            package_name = _find_package_context_in_repo(repo_dir, rel_path)
+            resources.append(
+                ResolvedResource(
+                    name=cmd_file.stem,
+                    resource_type=ResourceType.COMMAND,
+                    path=rel_path,
+                    source=ResourceSource.CLAUDE_DIR,
+                    package_name=package_name,
+                )
+            )
+
+    # Discover agents
+    agents_dir = claude_dir / AGENTS_SUBDIR
+    if agents_dir.is_dir():
+        for agent_file in agents_dir.glob("*.md"):
+            rel_path = Path(TOOL_DIR_NAME) / AGENTS_SUBDIR / agent_file.name
+            package_name = _find_package_context_in_repo(repo_dir, rel_path)
+            resources.append(
+                ResolvedResource(
+                    name=agent_file.stem,
+                    resource_type=ResourceType.AGENT,
+                    path=rel_path,
+                    source=ResourceSource.CLAUDE_DIR,
+                    package_name=package_name,
+                )
+            )
+
+    return resources
+
+
+def _discover_all_from_repo_root(repo_dir: Path) -> list[ResolvedResource]:
+    """Discover all auto-discoverable skills at repo root.
+
+    Finds all directories with SKILL.md that are not in .claude/.
+    These are skills that can be discovered by pattern like maragudk/skills.
+
+    Args:
+        repo_dir: Path to repository root
+
+    Returns:
+        List of ResolvedResource for each discovered skill
+    """
+    resources = []
+
+    # Find all SKILL.md files in repo (excluding .claude/)
+    for skill_md in repo_dir.rglob("SKILL.md"):
+        skill_dir = skill_md.parent
+        rel_path = skill_dir.relative_to(repo_dir)
+
+        # Skip .claude/ directory
+        if str(rel_path).startswith(TOOL_DIR_NAME):
+            continue
+
+        # Skip hidden directories
+        if any(part.startswith(".") for part in rel_path.parts):
+            continue
+
+        package_name = _find_package_context_in_repo(repo_dir, rel_path)
+        resources.append(
+            ResolvedResource(
+                name=skill_dir.name,
+                resource_type=ResourceType.SKILL,
+                path=rel_path,
+                source=ResourceSource.REPO_ROOT,
+                package_name=package_name,
+            )
+        )
+
+    return resources
+
+
+def discover_all_repo_resources(repo_dir: Path) -> list[ResolvedResource]:
+    """Discover all installable resources in a repository.
+
+    Discovery order (with deduplication by name):
+    1. Resources declared in agr.toml with 'path' key
+    2. Resources in .claude/ directory
+    3. Auto-discovered skills at repo root (directories with SKILL.md)
+
+    Resources from earlier sources take precedence over later ones
+    when there are name conflicts.
+
+    Args:
+        repo_dir: Path to extracted repository
+
+    Returns:
+        List of ResolvedResource for all discovered resources
+    """
+    seen_names: set[str] = set()
+    resources: list[ResolvedResource] = []
+
+    # 1. Resources declared in agr.toml
+    for res in _discover_all_from_agr_toml(repo_dir):
+        if res.name not in seen_names:
+            seen_names.add(res.name)
+            resources.append(res)
+
+    # 2. Resources in .claude/ directory
+    for res in _discover_all_from_claude_dir(repo_dir):
+        if res.name not in seen_names:
+            seen_names.add(res.name)
+            resources.append(res)
+
+    # 3. Auto-discovered skills at repo root
+    for res in _discover_all_from_repo_root(repo_dir):
+        if res.name not in seen_names:
+            seen_names.add(res.name)
+            resources.append(res)
+
+    return resources

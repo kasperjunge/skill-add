@@ -1,14 +1,17 @@
 """Sync command for agr."""
 
 import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated, Optional
 
 import typer
 
-from agr.config import AgrConfig, Dependency, find_config
-from agr.exceptions import AgrError, RepoNotFoundError, ResourceNotFoundError
-from agr.fetcher import RESOURCE_CONFIGS, ResourceType, fetch_resource
+from agr.config import AgrConfig, Dependency, find_config, get_or_create_config
+from agr.exceptions import AgrError, RepoNotFoundError, ResourceNotFoundError, ResourceExistsError
+from agr.fetcher import RESOURCE_CONFIGS, ResourceType, fetch_resource, downloaded_repo, fetch_resource_from_repo_dir
 from agr.github import get_username_from_git_remote
+from agr.resolver import discover_all_repo_resources, ResolvedResource, ResourceSource
 from agr.cli.common import (
     DEFAULT_REPO_NAME,
     TYPE_TO_SUBDIR,
@@ -26,6 +29,38 @@ from agr.utils import (
 )
 
 app = typer.Typer()
+
+
+@dataclass
+class RepoSyncResult:
+    """Result of syncing all resources from a repository."""
+
+    installed_skills: list[str] = field(default_factory=list)
+    installed_commands: list[str] = field(default_factory=list)
+    installed_agents: list[str] = field(default_factory=list)
+    installed_rules: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+    errors: list[tuple[str, str]] = field(default_factory=list)
+
+    @property
+    def total_installed(self) -> int:
+        """Total number of resources installed."""
+        return (
+            len(self.installed_skills)
+            + len(self.installed_commands)
+            + len(self.installed_agents)
+            + len(self.installed_rules)
+        )
+
+    @property
+    def total_skipped(self) -> int:
+        """Total number of resources skipped."""
+        return len(self.skipped)
+
+    @property
+    def total_errors(self) -> int:
+        """Total number of errors."""
+        return len(self.errors)
 
 # Mapping from type string to ResourceType enum
 TYPE_STRING_TO_ENUM = {
@@ -314,6 +349,249 @@ def _sync_local_dependencies(
     return (installed_count, updated_count, pruned_count, failed_count)
 
 
+def _parse_repo_ref(repo_ref: str) -> tuple[str, str]:
+    """Parse a repository reference into owner and repo name.
+
+    Args:
+        repo_ref: Repository reference like "owner/repo"
+
+    Returns:
+        Tuple of (owner, repo_name)
+
+    Raises:
+        typer.BadParameter: If the format is invalid
+    """
+    parts = repo_ref.split("/")
+    if len(parts) != 2:
+        raise typer.BadParameter(
+            f"Invalid repository reference '{repo_ref}'. Expected format: owner/repo"
+        )
+    return parts[0], parts[1]
+
+
+def _print_discovered_resources(resources: list[ResolvedResource]) -> None:
+    """Print discovered resources grouped by type."""
+    skills = [r for r in resources if r.resource_type == ResourceType.SKILL]
+    commands = [r for r in resources if r.resource_type == ResourceType.COMMAND]
+    agents = [r for r in resources if r.resource_type == ResourceType.AGENT]
+
+    console.print(f"[bold]Discovered {len(resources)} resources:[/bold]")
+
+    if skills:
+        skill_names = ", ".join(sorted(r.name for r in skills))
+        console.print(f"  [cyan]Skills ({len(skills)}):[/cyan] {skill_names}")
+    if commands:
+        command_names = ", ".join(sorted(r.name for r in commands))
+        console.print(f"  [cyan]Commands ({len(commands)}):[/cyan] {command_names}")
+    if agents:
+        agent_names = ", ".join(sorted(r.name for r in agents))
+        console.print(f"  [cyan]Agents ({len(agents)}):[/cyan] {agent_names}")
+
+
+def _install_all_resources(
+    repo_dir: Path,
+    resources: list[ResolvedResource],
+    owner: str,
+    repo: str,
+    base_path: Path,
+    overwrite: bool,
+) -> RepoSyncResult:
+    """Install all discovered resources from a repository.
+
+    Args:
+        repo_dir: Path to the extracted repository
+        resources: List of resources to install
+        owner: GitHub owner/username
+        repo: Repository name
+        base_path: Base .claude directory path
+        overwrite: Whether to overwrite existing resources
+
+    Returns:
+        RepoSyncResult with counts of installed, skipped, and errored resources
+    """
+    result = RepoSyncResult()
+
+    for resource in resources:
+        if resource.resource_type is None:
+            result.errors.append((resource.name, "Unknown resource type"))
+            continue
+
+        try:
+            res_config = RESOURCE_CONFIGS[resource.resource_type]
+            dest = base_path / res_config.dest_subdir
+
+            # Build path segments from the resource path
+            path_segments = list(resource.path.parts)
+            if path_segments and path_segments[-1] == "SKILL.md":
+                path_segments = path_segments[:-1]
+
+            # Use the last segment as the simple name
+            simple_name = resource.name
+
+            fetch_resource_from_repo_dir(
+                repo_dir,
+                simple_name,
+                [simple_name],  # path_segments for destination
+                dest,
+                resource.resource_type,
+                overwrite,
+                username=owner,
+                source_path=resource.path,
+                package_name=resource.package_name,
+            )
+
+            # Track by type
+            if resource.resource_type == ResourceType.SKILL:
+                result.installed_skills.append(resource.name)
+            elif resource.resource_type == ResourceType.COMMAND:
+                result.installed_commands.append(resource.name)
+            elif resource.resource_type == ResourceType.AGENT:
+                result.installed_agents.append(resource.name)
+            elif resource.resource_type == ResourceType.RULE:
+                result.installed_rules.append(resource.name)
+
+            console.print(f"  [green]+ {resource.resource_type.value} '{resource.name}'[/green]")
+
+        except ResourceExistsError:
+            result.skipped.append(resource.name)
+            console.print(f"  [dim]= {resource.resource_type.value} '{resource.name}' (exists)[/dim]")
+
+        except (ResourceNotFoundError, AgrError) as e:
+            result.errors.append((resource.name, str(e)))
+            console.print(f"  [red]! {resource.resource_type.value} '{resource.name}': {e}[/red]")
+
+    return result
+
+
+def _add_resources_to_toml(
+    resources: list[ResolvedResource],
+    owner: str,
+    repo: str,
+    installed_names: set[str],
+    global_install: bool,
+) -> None:
+    """Add installed resources to agr.toml.
+
+    Args:
+        resources: List of all discovered resources
+        owner: GitHub owner/username
+        repo: Repository name
+        installed_names: Names of resources that were actually installed
+        global_install: Whether this is a global installation
+    """
+    if global_install:
+        return
+
+    try:
+        config_path, config = get_or_create_config()
+
+        for resource in resources:
+            if resource.name not in installed_names:
+                continue
+
+            if resource.resource_type is None:
+                continue
+
+            # Build the handle: owner/repo/name or owner/name for default repo
+            if repo == DEFAULT_REPO_NAME:
+                handle = f"{owner}/{resource.name}"
+            else:
+                handle = f"{owner}/{repo}/{resource.name}"
+
+            config.add_remote(handle, resource.resource_type.value)
+
+        config.save(config_path)
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not update agr.toml: {e}[/yellow]")
+
+
+def _print_sync_repo_result(result: RepoSyncResult, owner: str, repo: str) -> None:
+    """Print summary of repository sync results."""
+    console.print()  # Empty line before summary
+
+    if result.total_installed > 0:
+        console.print(f"[green]Installed {result.total_installed} resources[/green]")
+
+    if result.total_skipped > 0:
+        console.print(
+            f"[yellow]Skipped {result.total_skipped} existing resources. "
+            f"Use --overwrite to replace.[/yellow]"
+        )
+
+    if result.total_errors > 0:
+        console.print(f"[red]Failed to install {result.total_errors} resources[/red]")
+
+    if result.total_installed > 0:
+        console.print("[dim]Added to agr.toml[/dim]")
+
+
+def _handle_sync_repo(
+    owner: str,
+    repo: str,
+    global_install: bool,
+    overwrite: bool,
+    skip_confirm: bool,
+) -> None:
+    """Sync all resources from a GitHub repository.
+
+    Args:
+        owner: GitHub owner/username
+        repo: Repository name
+        global_install: Whether to install globally
+        overwrite: Whether to overwrite existing resources
+        skip_confirm: Whether to skip confirmation prompt
+    """
+    base_path = get_base_path(global_install)
+
+    console.print(f"Fetching {owner}/{repo}...")
+
+    try:
+        with downloaded_repo(owner, repo) as repo_dir:
+            # Discover all resources
+            resources = discover_all_repo_resources(repo_dir)
+
+            if not resources:
+                console.print(f"[yellow]No resources found in {owner}/{repo}[/yellow]")
+                return
+
+            # Show discovered resources
+            _print_discovered_resources(resources)
+            console.print()
+
+            # Confirm installation
+            if not skip_confirm:
+                if not typer.confirm(f"Install {len(resources)} resources?", default=True):
+                    console.print("[dim]Cancelled[/dim]")
+                    return
+
+            console.print()
+            console.print("[bold]Installing:[/bold]")
+
+            # Install all resources
+            result = _install_all_resources(
+                repo_dir, resources, owner, repo, base_path, overwrite
+            )
+
+            # Add to agr.toml
+            installed_names = set(
+                result.installed_skills
+                + result.installed_commands
+                + result.installed_agents
+                + result.installed_rules
+            )
+            _add_resources_to_toml(resources, owner, repo, installed_names, global_install)
+
+            # Print summary
+            _print_sync_repo_result(result, owner, repo)
+
+            if result.total_errors > 0:
+                raise typer.Exit(1)
+
+    except RepoNotFoundError:
+        console.print(f"[red]Repository '{owner}/{repo}' not found on GitHub.[/red]")
+        raise typer.Exit(1)
+
+
 def _prune_unlisted_local_resources(
     config: AgrConfig,
     base_path: Path,
@@ -366,6 +644,12 @@ def _prune_unlisted_local_resources(
 
 @app.command()
 def sync(
+    repo_ref: Annotated[
+        Optional[str],
+        typer.Argument(
+            help="GitHub repository reference (owner/repo) to sync all resources from"
+        ),
+    ] = None,
     global_install: bool = typer.Option(
         False, "--global", "-g",
         help="Sync to global ~/.claude/ directory",
@@ -382,15 +666,40 @@ def sync(
         False, "--remote",
         help="Only sync remote dependencies from agr.toml",
     ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", "-o",
+        help="Overwrite existing resources (for repo sync)",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y",
+        help="Skip confirmation prompt (for repo sync)",
+    ),
 ) -> None:
     """Synchronize installed resources with agr.toml dependencies.
 
-    Only syncs resources explicitly listed in the agr.toml dependencies array.
-    Local paths and remote handles are both tracked in the same dependencies list.
+    Without arguments: syncs resources from agr.toml.
+    With owner/repo argument: installs all resources from that GitHub repository.
+
+    Examples:
+        agr sync                    # Sync from agr.toml
+        agr sync maragudk/skills    # Install all from maragudk/skills
+        agr sync owner/repo --yes   # Skip confirmation
 
     Use --local to only sync local path dependencies.
     Use --remote to only sync remote GitHub dependencies.
     """
+    # If repo_ref is provided, sync all resources from that repo
+    if repo_ref:
+        try:
+            owner, repo = _parse_repo_ref(repo_ref)
+        except typer.BadParameter as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        _handle_sync_repo(owner, repo, global_install, overwrite, yes)
+        return
+
+    # Otherwise, sync from agr.toml (existing behavior)
     base_path = get_base_path(global_install)
     total_installed, total_updated, total_pruned, total_failed = 0, 0, 0, 0
 

@@ -612,10 +612,19 @@ def handle_add_unified(
                 discovery = discover_resource_type_from_dir(repo_dir, name, path_segments)
 
                 if discovery.is_empty:
-                    error_exit(
+                    error_msg = (
                         f"Resource '{name}' not found in {username}/{repo_name}.\n"
                         f"Searched in: agr.toml, skills, commands, agents, bundles."
                     )
+                    # Check if this looks like a repo reference (owner/repo with no resource name)
+                    # This happens when user tries "agr add owner/repo" expecting all resources
+                    parts = resource_ref.split("/")
+                    if len(parts) == 2:
+                        error_msg += (
+                            f"\n\n[yellow]Hint: To install all resources from a repository, use:[/yellow]\n"
+                            f"  agr sync {resource_ref}"
+                        )
+                    error_exit(error_msg)
 
                 if discovery.is_ambiguous:
                     # Build helpful example commands for each type found
