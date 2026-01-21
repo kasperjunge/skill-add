@@ -1,8 +1,4 @@
-"""Shared fixtures for Jobs-to-Be-Done test suite.
-
-These fixtures provide consistent test environments for testing
-agr/agrx CLI workflows organized by user jobs.
-"""
+"""Shared fixtures for Jobs-to-Be-Done test suite."""
 
 from pathlib import Path
 
@@ -13,40 +9,18 @@ from agr.config import AgrConfig, Dependency
 from agr.handle import ParsedHandle
 
 
-# CLI test runner
 runner = CliRunner()
 
 
-# ============================================================================
-# Basic Project Fixtures
-# ============================================================================
-
-
-@pytest.fixture
-def project_with_git(tmp_path: Path, monkeypatch):
-    """Standard project with .git directory.
-
-    This is the minimum requirement for most agr commands.
-    """
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".git").mkdir()
-    return tmp_path
+# Note: project_with_git fixture is provided by tests/conftest.py
 
 
 @pytest.fixture
 def project_with_agr_toml(project_with_git: Path):
-    """Project with initialized empty agr.toml.
-
-    Use this when testing commands that expect agr.toml to exist.
-    """
+    """Project with initialized empty agr.toml."""
     config = AgrConfig()
     config.save(project_with_git / "agr.toml")
     return project_with_git
-
-
-# ============================================================================
-# Config with Dependencies Fixtures
-# ============================================================================
 
 
 @pytest.fixture
