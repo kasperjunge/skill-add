@@ -1,6 +1,6 @@
 site_name: Agent Resources
 site_url: https://kasperjunge.github.io/agent-resources/site/
-site_description: A package manager for Claude Code. Share and install skills, commands, and subagents.
+site_description: A package manager for Claude Code skills.
 site_author: Kasper Junge
 repo_url: https://github.com/kasperjunge/agent-resources
 repo_name: kasperjunge/agent-resources
@@ -19,11 +19,9 @@ theme:
 
   logo: images/puzzle.png
 
-
   features:
     - navigation.instant
     - navigation.tracking
-    - navigation.expand
     - content.code.copy
   custom_dir: overrides
 
@@ -50,22 +48,6 @@ markdown_extensions:
   - meta
 
 nav:
-  - Introduction: index.md
-  - Getting started:
-      - Installation: getting-started/installation.md
-      - First steps: getting-started/first-steps.md
-      - Getting help: getting-started/help.md
-  - Guides:
-      - Installing resources: guides/installing-resources.md
-      - Managing dependencies: guides/managing-dependencies.md
-      - Local resource authoring: guides/local-authoring.md
-      - Creating resources: guides/creating-resources.md
-      - Creating a shareable repo: guides/creating-repo.md
-  - Concepts:
-      - Resource types: concepts/resource-types.md
-      - Repository structure: concepts/repository-structure.md
-      - References and paths: concepts/references-and-paths.md
-      - Install locations: concepts/install-locations.md
-  - Reference:
-      - CLI reference: reference/cli.md
-      - Troubleshooting: reference/troubleshooting.md
+  - Home: index.md
+  - Creating Skills: creating.md
+  - Reference: reference.md

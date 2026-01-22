@@ -1,1 +1,1 @@
-"""Tests for the agr package."""
+"""Tests for agr v2."""

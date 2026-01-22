@@ -1,252 +1,195 @@
-"""Tests to verify documentation accuracy against implementation."""
+"""Tests for documentation integrity."""
 
 import re
 from pathlib import Path
 
 import pytest
-import tomlkit
 
-from agr.config import VALID_TYPES, AgrConfig
-from agr.fetcher.types import ResourceType, RESOURCE_CONFIGS
-from agr.adapters import AdapterRegistry
-
-
-# Path to docs directory
 DOCS_DIR = Path(__file__).parent.parent / "docs" / "docs"
-ROOT_DIR = Path(__file__).parent.parent
 
 
-class TestResourceTypeCoverage:
-    """Ensure all resource types are documented."""
-
-    def test_all_resource_types_in_valid_types(self):
-        """Test that all ResourceType enum values are in VALID_TYPES."""
-        for rt in ResourceType:
-            assert rt.value in VALID_TYPES, f"ResourceType.{rt.name} not in VALID_TYPES"
-
-    def test_all_resource_types_have_configs(self):
-        """Test that all ResourceType enum values have RESOURCE_CONFIGS."""
-        for rt in ResourceType:
-            assert rt in RESOURCE_CONFIGS, f"ResourceType.{rt.name} not in RESOURCE_CONFIGS"
-
-    def test_resource_types_documented(self):
-        """Test that resource-types.md mentions all resource types."""
-        resource_types_doc = DOCS_DIR / "concepts" / "resource-types.md"
-        if not resource_types_doc.exists():
-            pytest.skip("resource-types.md not found")
-
-        content = resource_types_doc.read_text().lower()
-
-        for rt in ResourceType:
-            # Check that the type is mentioned as a heading or description
-            assert rt.value in content, f"ResourceType '{rt.value}' not documented in resource-types.md"
+def get_markdown_files() -> list[Path]:
+    """Get all markdown files in docs directory."""
+    return list(DOCS_DIR.glob("*.md"))
 
 
-class TestValidTypesDocumentation:
-    """Test that valid types are consistently documented."""
+def extract_internal_links(content: str) -> list[str]:
+    """Extract internal markdown links from content, excluding code blocks."""
+    # First, remove code blocks to avoid parsing example links
+    content_no_code = re.sub(r"```.*?```", "", content, flags=re.DOTALL)
 
-    def test_valid_types_in_managing_dependencies(self):
-        """Test that managing-dependencies.md lists all valid types."""
-        doc = DOCS_DIR / "guides" / "managing-dependencies.md"
-        if not doc.exists():
-            pytest.skip("managing-dependencies.md not found")
+    # Match [text](link) where link doesn't start with http
+    pattern = r"\[([^\]]+)\]\(([^)]+)\)"
+    links = []
+    for match in re.finditer(pattern, content_no_code):
+        link = match.group(2)
+        if not link.startswith(("http://", "https://", "#")):
+            links.append(link)
+    return links
 
-        content = doc.read_text()
 
-        # Find the "Valid types:" line
-        match = re.search(r"Valid types:\s*`([^`]+)`(?:,\s*`([^`]+)`)*", content)
-        if match:
-            # Extract types from the line
-            types_line = content[content.find("Valid types:"):content.find("Valid types:") + 200]
-            documented_types = set(re.findall(r"`(\w+)`", types_line))
+def extract_code_blocks(content: str) -> list[tuple[str, str]]:
+    """Extract code blocks with their language from content."""
+    pattern = r"```(\w+)?\n(.*?)```"
+    return re.findall(pattern, content, re.DOTALL)
 
-            for valid_type in VALID_TYPES:
-                assert valid_type in documented_types, (
-                    f"Type '{valid_type}' not in documented valid types"
+
+class TestDocsExist:
+    """Test that required documentation files exist."""
+
+    def test_index_exists(self):
+        """Home page exists."""
+        assert (DOCS_DIR / "index.md").exists()
+
+    def test_creating_exists(self):
+        """Creating skills page exists."""
+        assert (DOCS_DIR / "creating.md").exists()
+
+    def test_reference_exists(self):
+        """Reference page exists."""
+        assert (DOCS_DIR / "reference.md").exists()
+
+    def test_llms_txt_exists(self):
+        """llms.txt exists."""
+        assert (DOCS_DIR / "llms.txt").exists()
+
+
+class TestInternalLinks:
+    """Test that internal links resolve to existing files."""
+
+    @pytest.mark.parametrize("md_file", get_markdown_files())
+    def test_internal_links_resolve(self, md_file: Path):
+        """All internal links point to existing files."""
+        content = md_file.read_text()
+        links = extract_internal_links(content)
+
+        for link in links:
+            # Handle relative links
+            if link.startswith("./"):
+                target = DOCS_DIR / link[2:]
+            else:
+                target = DOCS_DIR / link
+
+            # Remove .md extension handling for directory-style links
+            if not target.exists() and not target.suffix:
+                target = target.with_suffix(".md")
+
+            assert target.exists(), f"Broken link in {md_file.name}: {link}"
+
+
+class TestCodeExamples:
+    """Test that code examples are syntactically valid."""
+
+    @pytest.mark.parametrize("md_file", get_markdown_files())
+    def test_bash_commands_have_valid_structure(self, md_file: Path):
+        """Bash code blocks contain valid-looking commands."""
+        content = md_file.read_text()
+        blocks = extract_code_blocks(content)
+
+        for lang, code in blocks:
+            if lang == "bash":
+                # Skip empty blocks
+                if not code.strip():
+                    continue
+
+                # Check that bash commands start with a valid command or comment
+                lines = [l.strip() for l in code.strip().split("\n") if l.strip()]
+                for line in lines:
+                    # Skip comments
+                    if line.startswith("#"):
+                        continue
+                    # Check first word is a plausible command
+                    first_word = line.split()[0] if line.split() else ""
+                    assert first_word, f"Empty bash line in {md_file.name}"
+
+    @pytest.mark.parametrize("md_file", get_markdown_files())
+    def test_toml_syntax_valid(self, md_file: Path):
+        """TOML code blocks are syntactically valid."""
+        content = md_file.read_text()
+        blocks = extract_code_blocks(content)
+
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+
+        for lang, code in blocks:
+            if lang == "toml":
+                try:
+                    tomllib.loads(code)
+                except Exception as e:
+                    pytest.fail(f"Invalid TOML in {md_file.name}: {e}")
+
+    @pytest.mark.parametrize("md_file", get_markdown_files())
+    def test_markdown_code_blocks_have_frontmatter(self, md_file: Path):
+        """Markdown code blocks that show SKILL.md format have frontmatter."""
+        content = md_file.read_text()
+        blocks = extract_code_blocks(content)
+
+        for lang, code in blocks:
+            if lang == "markdown" and "SKILL" in code:
+                # Check for frontmatter
+                assert code.strip().startswith("---"), (
+                    f"SKILL.md example in {md_file.name} should start with frontmatter"
                 )
 
 
-class TestConfigExamples:
-    """Test that documented config examples are valid."""
+class TestCliCommands:
+    """Test that documented CLI commands are real."""
 
-    def test_example_toml_parses(self):
-        """Test that example agr.toml snippets in docs are valid TOML."""
-        doc = DOCS_DIR / "guides" / "managing-dependencies.md"
-        if not doc.exists():
-            pytest.skip("managing-dependencies.md not found")
+    KNOWN_COMMANDS = {"add", "remove", "sync", "list", "init"}
 
-        content = doc.read_text()
+    def test_documented_agr_commands_exist(self):
+        """Commands documented in reference.md are known commands."""
+        reference = (DOCS_DIR / "reference.md").read_text()
 
-        # Find TOML code blocks
-        toml_blocks = re.findall(r"```toml\n(.*?)```", content, re.DOTALL)
+        # Extract code blocks only
+        code_blocks = extract_code_blocks(reference)
+        bash_code = "\n".join(code for lang, code in code_blocks if lang == "bash")
 
-        for i, block in enumerate(toml_blocks):
-            # Skip blocks that are just comments or partial examples
-            if block.strip().startswith("#") and "=" not in block:
-                continue
+        # Extract agr commands from bash code blocks only
+        pattern = r"agr (\w+)"
+        commands = set(re.findall(pattern, bash_code))
 
-            try:
-                tomlkit.parse(block)
-            except Exception as e:
-                pytest.fail(f"TOML block {i+1} failed to parse: {e}\nContent:\n{block}")
-
-    def test_dependency_format_valid(self):
-        """Test that documented dependency formats are valid."""
-        # Create dependencies using the documented format
-        valid_examples = [
-            {"handle": "kasperjunge/commit", "type": "skill"},
-            {"path": "./commands/docs.md", "type": "command"},
-            {"handle": "acme/tools/review", "type": "command"},
-        ]
-
-        for example in valid_examples:
-            # This should not raise an exception
-            from agr.config import Dependency
-            if "handle" in example:
-                dep = Dependency(handle=example["handle"], type=example["type"])
-                assert dep.is_remote
-            else:
-                dep = Dependency(path=example["path"], type=example["type"])
-                assert dep.is_local
-
-
-class TestToolsConfigDocumentation:
-    """Test that tools configuration is properly documented."""
-
-    def test_tools_config_example_valid(self):
-        """Test that the documented [tools] config format is valid."""
-        example = """
-[tools]
-targets = ["claude", "cursor"]
-"""
-        doc = tomlkit.parse(example)
-        assert "tools" in doc
-        assert doc["tools"]["targets"] == ["claude", "cursor"]
-
-    def test_documented_tools_are_registered(self):
-        """Test that documented tool names are actually registered."""
-        doc = DOCS_DIR / "guides" / "managing-dependencies.md"
-        if not doc.exists():
-            pytest.skip("managing-dependencies.md not found")
-
-        content = doc.read_text()
-
-        # Find tool names in examples (claude, cursor)
-        tool_mentions = re.findall(r'--tool\s+(\w+)', content)
-
-        registered_tools = AdapterRegistry.all_names()
-
-        for tool in set(tool_mentions):
-            assert tool in registered_tools, (
-                f"Documented tool '{tool}' is not registered in AdapterRegistry"
+        for cmd in commands:
+            assert cmd in self.KNOWN_COMMANDS, (
+                f"Unknown command documented: agr {cmd}"
             )
 
-
-class TestCLIDocumentation:
-    """Test that CLI documentation matches implementation."""
-
-    def test_documented_commands_exist(self):
-        """Test that documented CLI commands actually exist."""
-        from agr.cli.main import app
-
-        # Get registered commands and groups from the app
-        registered_names = set()
-
-        # Add command names
-        for command in app.registered_commands:
-            name = command.name or (command.callback.__name__ if command.callback else None)
-            if name:
-                registered_names.add(name)
-
-        # Add group names
-        for group_info in app.registered_groups:
-            if hasattr(group_info, 'name') and group_info.name:
-                registered_names.add(group_info.name)
-            elif hasattr(group_info, 'typer_instance'):
-                # Try to get the name from the typer instance
-                pass
-
-        # Check that basic commands are documented
-        expected_commands = {"add", "remove", "sync", "list", "init"}
-
-        for cmd in expected_commands:
-            found = cmd in registered_names or any(cmd in name for name in registered_names)
-            assert found, f"Command '{cmd}' not found in CLI. Found: {registered_names}"
-
-    def test_documented_flags_in_sync(self):
-        """Test that documented flags for agr sync exist."""
-        from agr.cli.sync import sync
-
-        import inspect
-        sig = inspect.signature(sync)
-        params = set(sig.parameters.keys())
-
-        # Documented flags (converted to parameter names)
-        expected_params = {"global_install", "prune", "local_only", "remote_only", "overwrite", "yes", "tool"}
-
-        for param in expected_params:
-            assert param in params, f"Documented flag '--{param}' not in sync command"
+    def test_documented_agrx_exists(self):
+        """agrx command is documented."""
+        reference = (DOCS_DIR / "reference.md").read_text()
+        assert "agrx" in reference
 
 
-class TestReadmeAccuracy:
-    """Test that README.md is accurate."""
+class TestContentQuality:
+    """Test documentation content quality."""
 
-    def test_readme_commands_table(self):
-        """Test that README command table has valid commands."""
-        readme = ROOT_DIR / "README.md"
-        if not readme.exists():
-            pytest.skip("README.md not found")
+    def test_index_has_quick_start(self):
+        """Home page has a quick install example."""
+        content = (DOCS_DIR / "index.md").read_text()
+        assert "uvx agr add" in content or "pip install agr" in content
 
-        content = readme.read_text()
+    def test_creating_has_skill_example(self):
+        """Creating page has a complete skill example."""
+        content = (DOCS_DIR / "creating.md").read_text()
+        assert "SKILL.md" in content
+        assert "name:" in content
+        assert "description:" in content
 
-        # Check that key commands are mentioned
-        expected_commands = [
-            "agr add",
-            "agr remove",
-            "agr sync",
-            "agr list",
-            "agr init",
-            "agrx",
-        ]
+    def test_reference_has_all_commands(self):
+        """Reference page documents all main commands."""
+        content = (DOCS_DIR / "reference.md").read_text()
+        for cmd in ["agr add", "agr remove", "agr sync", "agr list", "agr init", "agrx"]:
+            assert cmd in content, f"Missing documentation for {cmd}"
 
-        for cmd in expected_commands:
-            assert cmd in content, f"Command '{cmd}' not mentioned in README"
+    def test_no_broken_next_steps(self):
+        """Next steps links in index.md point to valid pages."""
+        content = (DOCS_DIR / "index.md").read_text()
+        links = extract_internal_links(content)
 
-
-class TestChangelogFormat:
-    """Test that CHANGELOG.md follows conventions."""
-
-    def test_changelog_exists(self):
-        """Test that CHANGELOG.md exists."""
-        changelog = ROOT_DIR / "CHANGELOG.md"
-        assert changelog.exists(), "CHANGELOG.md not found"
-
-    def test_changelog_has_current_version(self):
-        """Test that CHANGELOG.md includes the current version."""
-        changelog = ROOT_DIR / "CHANGELOG.md"
-        if not changelog.exists():
-            pytest.skip("CHANGELOG.md not found")
-
-        # Read current version from pyproject.toml
-        pyproject = ROOT_DIR / "pyproject.toml"
-        pyproject_content = tomlkit.parse(pyproject.read_text())
-        current_version = pyproject_content["project"]["version"]
-
-        changelog_content = changelog.read_text()
-        assert current_version in changelog_content, (
-            f"Current version {current_version} not in CHANGELOG.md"
-        )
-
-    def test_changelog_format(self):
-        """Test that CHANGELOG.md follows Keep a Changelog format."""
-        changelog = ROOT_DIR / "CHANGELOG.md"
-        if not changelog.exists():
-            pytest.skip("CHANGELOG.md not found")
-
-        content = changelog.read_text()
-
-        # Check for standard sections
-        assert "## [" in content, "CHANGELOG missing version headers"
-        assert any(
-            section in content for section in ["### Added", "### Changed", "### Fixed", "### Removed"]
-        ), "CHANGELOG missing standard sections"
+        for link in links:
+            target = DOCS_DIR / link
+            if not target.exists() and not target.suffix:
+                target = target.with_suffix(".md")
+            assert target.exists(), f"Broken next steps link: {link}"

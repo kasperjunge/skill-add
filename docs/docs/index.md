@@ -1,107 +1,101 @@
 ---
-title: Introduction
+title: Home
 ---
 
-# Introduction
+# AGR — Skills for AI Agents
 
-Agent Resources (agr) is a CLI for installing, managing, and sharing Claude Code resources from GitHub.
-It lets you pull skills, slash commands, and subagents into your local `.claude/` folder with a
-single command—and track them as project dependencies.
+A package and project manager for AI agent skills. Install, share, and manage skills from GitHub.
 
-## Highlights
-
-- **Install resources instantly** — Add skills, commands, and agents from GitHub with one command
-- **Track dependencies** — Declare resources in `agr.toml` and sync across machines
-- **Organized by default** — Resources install to namespaced paths that prevent conflicts
-- **Auto-detection** — No need to specify resource types; agr figures it out
-- **Share easily** — Create and publish your own resources with `agr init`
-
-## Quick start
-
-No install required:
-
-```bash
-uvx agr add kasperjunge/hello-world
-```
-
-Install permanently:
+## Install
 
 ```bash
 pip install agr
-agr add kasperjunge/hello-world
 ```
 
-The resource type (skill, command, or agent) is auto-detected.
+## Add a Skill
 
-## Where resources go
-
-Resources install to organized, namespaced paths:
-
-```
-./
-└── .claude/
-    ├── skills/
-    │   └── kasperjunge:hello-world/
-    │       └── SKILL.md
-    ├── commands/
-    │   └── kasperjunge/
-    │       └── review.md
-    └── agents/
-        └── kasperjunge/
-            └── expert.md
+```bash
+agr add anthropics/skills/frontend-design
 ```
 
-Skills use a flattened colon format (`username:skill-name`) for Claude Code discoverability.
+Done. The skill is available in Claude Code.
 
-Or globally with `--global`:
+## Run a Skill Directly
 
+Run skills from your terminal without installing:
+
+```bash
+agrx anthropics/skills/pdf                  # Run once, then clean up
+agrx anthropics/skills/pdf -p "Extract tables from report.pdf"
+agrx anthropics/skills/pdf -i               # Interactive: run skill, then continue chatting
 ```
-~/
-└── .claude/
-    └── ...
-```
 
-## Track your dependencies
+The `-i` flag runs the skill first, then starts an interactive session so you can continue the conversation.
 
-agr automatically tracks resources in `agr.toml`:
+## Share with Your Team
+
+Dependencies are tracked in `agr.toml`:
 
 ```toml
 dependencies = [
-    {handle = "kasperjunge/hello-world", type = "skill"},
-    {handle = "madsnorgaard/drupal-expert", type = "skill"},
+    {handle = "anthropics/skills/frontend-design"},
+    {handle = "anthropics/skills/skill-creator"},
 ]
 ```
 
-Sync your resources on any machine:
+Teammates install everything with:
 
 ```bash
 agr sync
 ```
 
-## How it works
+## Commands
 
-Resources are fetched from GitHub repositories that follow a simple layout:
+| Command | What it does |
+|---------|-------------|
+| `agr add <handle>` | Install a skill |
+| `agr remove <handle>` | Uninstall a skill |
+| `agr sync` | Install all dependencies from `agr.toml` |
+| `agr list` | Show skills and installation status |
+| `agr init` | Create `agr.toml` |
+| `agr init <name>` | Create a skill scaffold |
+| `agrx <handle>` | Run a skill temporarily |
 
-```
-agent-resources/
-└── resources/
-    ├── skills/
-    ├── commands/
-    └── agents/
-```
-
-Or from the `.claude/` directory for backwards compatibility.
-
-By default, `agr add` looks in a repository named `agent-resources` on the user's GitHub account.
-If a repo has a different name, include it in the reference:
+## Handle Format
 
 ```bash
-agr add username/custom-repo/resource-name
+agr add user/skill              # From user's "agent-resources" repo
+agr add user/repo/skill         # From a different repo
 ```
 
-## Next steps
+If a user's repo is named `agent-resources`, you can skip the repo name:
 
-- Start with [Installation](getting-started/installation.md)
-- Follow [First steps](getting-started/first-steps.md) for a complete walkthrough
-- Learn about [Managing dependencies](guides/managing-dependencies.md) with `agr.toml`
-- Browse full CLI details in [CLI reference](reference/cli.md)
+```bash
+agr add kasperjunge/commit                    # From kasperjunge/agent-resources
+agr add kasperjunge/agent-resources/commit    # Same thing (explicit)
+```
+
+## Skill Discovery
+
+When you run `agr add user/repo/skill`, agr automatically searches the repo for a skill named `skill`. It doesn't matter where the skill is located—it will be found if it exists anywhere in:
+
+- `resources/skills/{skill}/SKILL.md`
+- `skills/{skill}/SKILL.md`
+- `{skill}/SKILL.md`
+
+If two skills have the same name, you'll get an error.
+
+## Example Skills
+
+```bash
+agr add anthropics/skills/frontend-design    # Build production-grade UIs
+agr add anthropics/skills/skill-creator      # Create new skills
+agr add anthropics/skills/pdf                # Work with PDF documents
+```
+
+Browse more at [github.com/anthropics/skills](https://github.com/anthropics/skills).
+
+## Next Steps
+
+- [Create your own skill](creating.md)
+- [CLI reference](reference.md)

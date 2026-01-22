@@ -1,369 +1,221 @@
-"""Tests for agr.toml configuration management."""
-
-from pathlib import Path
+"""Tests for agr.config module."""
 
 import pytest
 
-from agr.config import AgrConfig, Dependency, find_config, get_or_create_config
-from agr.exceptions import ConfigParseError
+from agr.config import (
+    AgrConfig,
+    Dependency,
+    find_config,
+    find_repo_root,
+    get_or_create_config,
+)
+from agr.exceptions import ConfigError
 
 
 class TestDependency:
     """Tests for Dependency dataclass."""
 
-    def test_create_remote_dependency(self):
-        """Test creating a remote dependency with handle."""
-        dep = Dependency(handle="kasperjunge/commit", type="skill")
-        assert dep.handle == "kasperjunge/commit"
-        assert dep.path is None
-        assert dep.type == "skill"
+    def test_remote_dependency(self):
+        """Create a remote dependency."""
+        dep = Dependency(type="skill", handle="kasperjunge/commit")
         assert dep.is_remote
         assert not dep.is_local
         assert dep.identifier == "kasperjunge/commit"
 
-    def test_create_local_dependency(self):
-        """Test creating a local dependency with path."""
-        dep = Dependency(path="./commands/docs.md", type="command")
-        assert dep.path == "./commands/docs.md"
-        assert dep.handle is None
-        assert dep.type == "command"
+    def test_local_dependency(self):
+        """Create a local dependency."""
+        dep = Dependency(type="skill", path="./my-skill")
         assert dep.is_local
         assert not dep.is_remote
-        assert dep.identifier == "./commands/docs.md"
+        assert dep.identifier == "./my-skill"
 
-    def test_dependency_requires_handle_or_path(self):
-        """Test that dependency must have either handle or path."""
-        with pytest.raises(ValueError, match="must have either handle or path"):
+    def test_both_handle_and_path_raises(self):
+        """Cannot have both handle and path."""
+        with pytest.raises(ValueError, match="cannot have both"):
+            Dependency(type="skill", handle="user/skill", path="./local")
+
+    def test_neither_handle_nor_path_raises(self):
+        """Must have either handle or path."""
+        with pytest.raises(ValueError, match="must have either"):
             Dependency(type="skill")
-
-    def test_dependency_cannot_have_both(self):
-        """Test that dependency cannot have both handle and path."""
-        with pytest.raises(ValueError, match="cannot have both handle and path"):
-            Dependency(handle="kasperjunge/commit", path="./skills/test", type="skill")
 
 
 class TestAgrConfig:
     """Tests for AgrConfig class."""
 
-    def test_load_valid_new_format(self, tmp_path: Path):
-        """Test loading a valid agr.toml file in new list format."""
+    def test_load_nonexistent(self, tmp_path):
+        """Loading nonexistent file returns empty config."""
+        config = AgrConfig.load(tmp_path / "agr.toml")
+        assert config.dependencies == []
+
+    def test_load_empty(self, tmp_path):
+        """Loading empty file returns empty config."""
         config_path = tmp_path / "agr.toml"
-        config_path.write_text('''dependencies = [
-    { handle = "kasperjunge/commit", type = "skill" },
-    { path = "./commands/docs.md", type = "command" },
-]
-''')
-
+        config_path.write_text("dependencies = []")
         config = AgrConfig.load(config_path)
+        assert config.dependencies == []
 
+    def test_load_with_dependencies(self, tmp_path):
+        """Load config with dependencies."""
+        config_path = tmp_path / "agr.toml"
+        config_path.write_text("""
+dependencies = [
+    { handle = "kasperjunge/commit", type = "skill" },
+    { path = "./my-skill", type = "skill" },
+]
+""")
+        config = AgrConfig.load(config_path)
         assert len(config.dependencies) == 2
         assert config.dependencies[0].handle == "kasperjunge/commit"
-        assert config.dependencies[0].type == "skill"
-        assert config.dependencies[1].path == "./commands/docs.md"
-        assert config.dependencies[1].type == "command"
+        assert config.dependencies[1].path == "./my-skill"
 
-    def test_load_valid_old_format_migrates(self, tmp_path: Path):
-        """Test loading old table format auto-migrates."""
+    def test_load_invalid_toml_raises(self, tmp_path):
+        """Loading invalid TOML raises ConfigError."""
         config_path = tmp_path / "agr.toml"
-        config_path.write_text('''[dependencies]
-"kasperjunge/commit" = {}
-"alice/code-review" = { type = "skill" }
-''')
-
-        config = AgrConfig.load(config_path)
-
-        assert len(config.dependencies) == 2
-        assert config._migrated is True
-        # Find by handle
-        commit_dep = config.get_by_handle("kasperjunge/commit")
-        review_dep = config.get_by_handle("alice/code-review")
-        assert commit_dep is not None
-        assert commit_dep.type == "skill"  # Default type
-        assert review_dep is not None
-        assert review_dep.type == "skill"
-
-    def test_load_old_format_with_local_section(self, tmp_path: Path):
-        """Test loading old format with [local] section migrates."""
-        config_path = tmp_path / "agr.toml"
-        config_path.write_text('''[dependencies]
-"kasperjunge/commit" = {}
-
-[local]
-"my-skill" = { path = "./skills/my-skill", type = "skill" }
-''')
-
-        config = AgrConfig.load(config_path)
-
-        assert len(config.dependencies) == 2
-        assert config._migrated is True
-        local_dep = config.get_by_path("./skills/my-skill")
-        assert local_dep is not None
-        assert local_dep.type == "skill"
-
-    def test_load_empty_config(self, tmp_path: Path):
-        """Test loading an empty agr.toml file."""
-        config_path = tmp_path / "agr.toml"
-        config_path.write_text("")
-
-        config = AgrConfig.load(config_path)
-
-        assert config.dependencies == []
-
-    def test_load_config_without_dependencies(self, tmp_path: Path):
-        """Test loading a config file without dependencies section."""
-        config_path = tmp_path / "agr.toml"
-        config_path.write_text("[metadata]\nname = 'test'\n")
-
-        config = AgrConfig.load(config_path)
-
-        assert config.dependencies == []
-
-    def test_load_invalid_toml_raises_error(self, tmp_path: Path):
-        """Test that invalid TOML raises ConfigParseError."""
-        config_path = tmp_path / "agr.toml"
-        config_path.write_text("invalid toml [[[")
-
-        with pytest.raises(ConfigParseError):
+        config_path.write_text("invalid toml [")
+        with pytest.raises(ConfigError):
             AgrConfig.load(config_path)
 
-    def test_load_nonexistent_file(self, tmp_path: Path):
-        """Test loading a nonexistent file returns empty config."""
-        config_path = tmp_path / "nonexistent.toml"
-
-        config = AgrConfig.load(config_path)
-
-        assert config.dependencies == []
-
-    def test_save_roundtrip(self, tmp_path: Path):
-        """Test that saving and loading preserves data."""
-        config_path = tmp_path / "agr.toml"
-
-        # Create and save config
+    def test_save(self, tmp_path):
+        """Save config to file."""
         config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-        config.add_local("./commands/docs.md", "command")
+        config.add_dependency(Dependency(type="skill", handle="kasperjunge/commit"))
+        config_path = tmp_path / "agr.toml"
         config.save(config_path)
 
-        # Load and verify
+        # Reload and verify
         loaded = AgrConfig.load(config_path)
-        assert len(loaded.dependencies) == 2
-        assert loaded.get_by_handle("kasperjunge/commit") is not None
-        assert loaded.get_by_path("./commands/docs.md") is not None
+        assert len(loaded.dependencies) == 1
+        assert loaded.dependencies[0].handle == "kasperjunge/commit"
 
-    def test_save_writes_new_format(self, tmp_path: Path):
-        """Test that saving always writes new list format."""
-        config_path = tmp_path / "agr.toml"
-
+    def test_add_dependency(self):
+        """Add a dependency."""
         config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-        config.save(config_path)
-
-        content = config_path.read_text()
-        assert "dependencies = [" in content
-        assert "handle = " in content
-
-
-class TestDependencyManagement:
-    """Tests for add/remove dependency operations."""
-
-    def test_add_remote_basic(self):
-        """Test adding a basic remote dependency."""
-        config = AgrConfig()
-
-        config.add_remote("kasperjunge/commit", "skill")
-
+        config.add_dependency(Dependency(type="skill", handle="user/skill"))
         assert len(config.dependencies) == 1
-        dep = config.get_by_handle("kasperjunge/commit")
-        assert dep is not None
-        assert dep.type == "skill"
 
-    def test_add_local_basic(self):
-        """Test adding a basic local dependency."""
+    def test_add_dependency_replaces_existing(self):
+        """Adding duplicate identifier replaces existing."""
         config = AgrConfig()
-
-        config.add_local("./commands/docs.md", "command")
-
+        config.add_dependency(Dependency(type="skill", handle="user/skill"))
+        config.add_dependency(Dependency(type="skill", handle="user/skill"))
         assert len(config.dependencies) == 1
-        dep = config.get_by_path("./commands/docs.md")
-        assert dep is not None
-        assert dep.type == "command"
-
-    def test_add_dependency_overwrites_existing(self):
-        """Test that adding an existing dependency overwrites it."""
-        config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-
-        config.add_remote("kasperjunge/commit", "command")
-
-        assert len(config.dependencies) == 1
-        dep = config.get_by_handle("kasperjunge/commit")
-        assert dep.type == "command"
 
     def test_remove_dependency(self):
-        """Test removing a dependency by identifier."""
+        """Remove a dependency."""
         config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-        config.add_remote("alice/review", "skill")
-
-        removed = config.remove_dependency("kasperjunge/commit")
-
-        assert removed is True
-        assert len(config.dependencies) == 1
-        assert config.get_by_handle("kasperjunge/commit") is None
-        assert config.get_by_handle("alice/review") is not None
-
-    def test_remove_by_handle(self):
-        """Test removing a remote dependency by handle."""
-        config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-
-        removed = config.remove_by_handle("kasperjunge/commit")
-
-        assert removed is True
+        config.add_dependency(Dependency(type="skill", handle="user/skill"))
+        removed = config.remove_dependency("user/skill")
+        assert removed
         assert len(config.dependencies) == 0
 
-    def test_remove_by_path(self):
-        """Test removing a local dependency by path."""
+    def test_remove_nonexistent(self):
+        """Removing nonexistent returns False."""
         config = AgrConfig()
-        config.add_local("./commands/docs.md", "command")
+        removed = config.remove_dependency("user/skill")
+        assert not removed
 
-        removed = config.remove_by_path("./commands/docs.md")
-
-        assert removed is True
-        assert len(config.dependencies) == 0
-
-    def test_remove_nonexistent_dependency(self):
-        """Test that removing a nonexistent dependency returns False."""
+    def test_get_by_identifier(self):
+        """Find dependency by identifier."""
         config = AgrConfig()
+        config.add_dependency(Dependency(type="skill", handle="user/skill"))
+        dep = config.get_by_identifier("user/skill")
+        assert dep is not None
+        assert dep.handle == "user/skill"
 
-        removed = config.remove_dependency("nonexistent/dep")
-
-        assert removed is False
-        assert config.dependencies == []
-
-    def test_get_local_dependencies(self):
-        """Test filtering to local dependencies only."""
+    def test_get_by_identifier_not_found(self):
+        """Returns None for nonexistent identifier."""
         config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-        config.add_local("./commands/docs.md", "command")
-        config.add_local("./skills/test", "skill")
-
-        local = config.get_local_dependencies()
-
-        assert len(local) == 2
-        assert all(d.is_local for d in local)
-
-    def test_get_remote_dependencies(self):
-        """Test filtering to remote dependencies only."""
-        config = AgrConfig()
-        config.add_remote("kasperjunge/commit", "skill")
-        config.add_remote("alice/review", "skill")
-        config.add_local("./commands/docs.md", "command")
-
-        remote = config.get_remote_dependencies()
-
-        assert len(remote) == 2
-        assert all(d.is_remote for d in remote)
+        dep = config.get_by_identifier("user/skill")
+        assert dep is None
 
 
 class TestFindConfig:
     """Tests for find_config function."""
 
-    def test_find_config_in_current_dir(self, tmp_path: Path, monkeypatch):
-        """Test finding config in current directory."""
-        config_path = tmp_path / "agr.toml"
-        config_path.write_text("dependencies = []\n")
+    def test_find_in_current_dir(self, tmp_path, monkeypatch):
+        """Find config in current directory."""
         monkeypatch.chdir(tmp_path)
-
-        # Also create a git directory to mark as git root
         (tmp_path / ".git").mkdir()
-
-        result = find_config()
-
-        assert result == config_path
-
-    def test_find_config_in_parent_dir(self, tmp_path: Path, monkeypatch):
-        """Test finding config in parent directory."""
         config_path = tmp_path / "agr.toml"
-        config_path.write_text("dependencies = []\n")
+        config_path.write_text("dependencies = []")
+
+        found = find_config()
+        assert found == config_path
+
+    def test_find_in_parent_dir(self, tmp_path, monkeypatch):
+        """Find config in parent directory."""
         (tmp_path / ".git").mkdir()
+        config_path = tmp_path / "agr.toml"
+        config_path.write_text("dependencies = []")
 
-        subdir = tmp_path / "src" / "app"
-        subdir.mkdir(parents=True)
-        monkeypatch.chdir(subdir)
-
-        result = find_config()
-
-        assert result == config_path
-
-    def test_find_config_stops_at_git_root(self, tmp_path: Path, monkeypatch):
-        """Test that search stops at git root."""
-        # Create config outside git root
-        outer_config = tmp_path / "agr.toml"
-        outer_config.write_text("dependencies = []\n")
-
-        # Create git root without config
-        git_root = tmp_path / "project"
-        git_root.mkdir()
-        (git_root / ".git").mkdir()
-
-        subdir = git_root / "src"
+        subdir = tmp_path / "subdir"
         subdir.mkdir()
         monkeypatch.chdir(subdir)
 
-        result = find_config()
+        found = find_config()
+        assert found == config_path
 
-        assert result is None
-
-    def test_find_config_not_found(self, tmp_path: Path, monkeypatch):
-        """Test when no config file exists."""
+    def test_not_found_at_git_root(self, tmp_path, monkeypatch):
+        """Returns None when not found at git root."""
+        monkeypatch.chdir(tmp_path)
         (tmp_path / ".git").mkdir()
+
+        found = find_config()
+        assert found is None
+
+
+class TestFindRepoRoot:
+    """Tests for find_repo_root function."""
+
+    def test_find_repo_root(self, tmp_path, monkeypatch):
+        """Find git repository root."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".git").mkdir()
+
+        root = find_repo_root()
+        assert root == tmp_path
+
+    def test_find_from_subdir(self, tmp_path, monkeypatch):
+        """Find repo root from subdirectory."""
+        (tmp_path / ".git").mkdir()
+        subdir = tmp_path / "a" / "b" / "c"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+
+        root = find_repo_root()
+        assert root == tmp_path
+
+    def test_not_in_repo(self, tmp_path, monkeypatch):
+        """Returns None when not in a git repo."""
         monkeypatch.chdir(tmp_path)
 
-        result = find_config()
-
-        assert result is None
+        root = find_repo_root()
+        assert root is None
 
 
 class TestGetOrCreateConfig:
     """Tests for get_or_create_config function."""
 
-    def test_get_existing_config(self, tmp_path: Path, monkeypatch):
-        """Test getting an existing config file."""
-        config_path = tmp_path / "agr.toml"
-        config_path.write_text('''dependencies = [
-    { handle = "kasperjunge/commit", type = "skill" },
-]
-''')
-        (tmp_path / ".git").mkdir()
+    def test_creates_new(self, tmp_path, monkeypatch):
+        """Creates new config if none exists."""
         monkeypatch.chdir(tmp_path)
 
         path, config = get_or_create_config()
-
-        assert path == config_path
-        assert config.get_by_handle("kasperjunge/commit") is not None
-
-    def test_create_config_when_missing(self, tmp_path: Path, monkeypatch):
-        """Test creating a config file when none exists."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-
-        path, config = get_or_create_config()
-
         assert path == tmp_path / "agr.toml"
         assert path.exists()
         assert config.dependencies == []
 
-    def test_get_config_from_parent_dir(self, tmp_path: Path, monkeypatch):
-        """Test getting config from parent directory."""
+    def test_returns_existing(self, tmp_path, monkeypatch):
+        """Returns existing config."""
+        monkeypatch.chdir(tmp_path)
         config_path = tmp_path / "agr.toml"
-        config_path.write_text("dependencies = []\n")
-        (tmp_path / ".git").mkdir()
-
-        subdir = tmp_path / "src"
-        subdir.mkdir()
-        monkeypatch.chdir(subdir)
+        config_path.write_text("""
+dependencies = [
+    { handle = "user/skill", type = "skill" },
+]
+""")
 
         path, config = get_or_create_config()
-
         assert path == config_path
+        assert len(config.dependencies) == 1

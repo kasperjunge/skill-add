@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agr"
-version = "0.5.7"
+version = "0.6.0"
 description = "Agent Resources - A package and project manager for AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,8 +17,15 @@ dependencies = [
 ]
 
 [project.scripts]
-agr = "agr.cli.main:app"
-agrx = "agr.cli.run:app"
+agr = "agr.main:app"
+agrx = "agrx.main:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["agr"]
+packages = ["agr", "agrx"]
+
+[tool.pytest.ini_options]
+markers = [
+    "e2e: end-to-end tests requiring network (skip with '-m \"not e2e\"')",
+    "network: tests that make real network requests",
+    "slow: tests taking > 5 seconds",
+]

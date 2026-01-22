@@ -1,57 +1,36 @@
-# Agent Resources
+# Agent Resources (agr)
 
-> A package manager for Claude Code resources.
+> A package and project manager for AI agent skills.
 
 ## What This Is
 
-Agent Resources (agr) is a CLI tool that lets developers install and create Claude Code skills,
-commands, and subagents from GitHub.
+agr is a CLI tool that lets developers install, share, and manage AI agent skills from GitHub.
 
 ## Quick Start
 
 ```bash
 pip install agr
-agr add username/skill-name
+agr add anthropics/skills/frontend-design
 ```
 
 ## Key Pages
 
-- [Introduction](https://kasperjunge.github.io/agent-resources/site/) - Overview and quick start
-- [Getting started](https://kasperjunge.github.io/agent-resources/site/getting-started/) - Install and first steps
-- [Guides](https://kasperjunge.github.io/agent-resources/site/guides/) - Common workflows
-- [Concepts](https://kasperjunge.github.io/agent-resources/site/concepts/) - Mental models and structure
-- [Reference](https://kasperjunge.github.io/agent-resources/site/reference/) - CLI reference and troubleshooting
-
-## Resource Types
-
-| Type | Description |
-|------|-------------|
-| Skills | Capabilities your agent uses automatically |
-| Commands | Slash commands like `/review` or `/deploy` |
-| Agents | Specialized subagents to delegate tasks to |
+- [Home](https://kasperjunge.github.io/agent-resources/site/) - Install and use skills
+- [Creating Skills](https://kasperjunge.github.io/agent-resources/site/creating/) - Author your own
+- [Reference](https://kasperjunge.github.io/agent-resources/site/reference/) - CLI commands and troubleshooting
 
 ## Common Commands
 
 ```bash
-# Install from GitHub (auto-detects type)
-agr add username/resource-name
-
-# Install globally (all projects)
-agr add username/resource-name --global
-
-# Run temporarily without installing
-agrx username/resource-name
-
-# Initialize authoring structure
-agr init
-
-# Create resources
-agr init skill my-skill
-agr init command my-command
-agr init agent my-agent
-
-# Sync dependencies
-agr sync
+agr add user/skill         # Install from GitHub
+agr add user/repo/skill    # From a specific repo
+agr remove user/skill      # Uninstall
+agr sync                   # Install all dependencies
+agr list                   # Show installed skills
+agr init                   # Create agr.toml
+agr init my-skill          # Create a skill scaffold
+agrx user/skill            # Run temporarily
+agrx user/skill -i         # Run, then continue chatting
 ```
 
 ## Source Code
@@ -59,10 +38,10 @@ agr sync
 - GitHub: https://github.com/kasperjunge/agent-resources
 - PyPI: https://pypi.org/project/agr/
 
-## Contact
+## Related
 
-- GitHub Issues: https://github.com/kasperjunge/agent-resources/issues
-- Author: Kasper Junge (@kasperjunge)
+- Skills Specification: https://agentskills.io/specification
+- Example Skills: https://github.com/anthropics/skills
 
 ## License
 

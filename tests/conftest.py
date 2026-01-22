@@ -1,41 +1,44 @@
-"""Test configuration and fixtures."""
+"""Test configuration and fixtures for agr v2."""
 
-import pytest
+import os
 from pathlib import Path
 
-from agr.config import AgrConfig
+import pytest
+
+
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line("markers", "e2e: end-to-end tests requiring network")
+    config.addinivalue_line("markers", "network: tests that make real network requests")
+
+
+@pytest.fixture(autouse=True)
+def skip_e2e_in_ci(request):
+    """Auto-skip E2E tests in CI based on SKIP_E2E env var."""
+    if request.node.get_closest_marker("e2e"):
+        if os.environ.get("SKIP_E2E", "").lower() in ("1", "true", "yes"):
+            pytest.skip("E2E tests skipped in CI (SKIP_E2E=1)")
 
 
 @pytest.fixture
 def git_project(tmp_path: Path, monkeypatch):
-    """Set up a temporary git project directory.
-
-    Returns the tmp_path after changing to the directory and creating a .git folder.
-    """
+    """Set up a temporary git project directory."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     return tmp_path
 
 
-@pytest.fixture(autouse=True)
-def cleanup_test_entries():
-    """Clean up any testuser entries from agr.toml after each test."""
-    yield
+@pytest.fixture
+def skill_fixture(tmp_path: Path) -> Path:
+    """Create a valid skill directory."""
+    skill_dir = tmp_path / "test-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("""---
+name: test-skill
+---
 
-    agr_toml = Path(__file__).parent.parent / "agr.toml"
-    if not agr_toml.exists():
-        return
+# Test Skill
 
-    config = AgrConfig.load(agr_toml)
-    original_count = len(config.dependencies)
-
-    config.dependencies = [
-        dep for dep in config.dependencies
-        if not (
-            (dep.handle and dep.handle.startswith("testuser/"))
-            or (dep.path and "testuser" in dep.path)
-        )
-    ]
-
-    if len(config.dependencies) != original_count:
-        config.save(agr_toml)
+A test skill for unit tests.
+""")
+    return skill_dir
