@@ -2,6 +2,9 @@
 
 All Claude-specific paths and configuration are isolated in this module
 for future extensibility to other tools.
+
+DEPRECATED: This module provides backward compatibility shims.
+For new code, use agr.core.tool (ToolSpec, ToolResourceConfig) instead.
 """
 
 from dataclasses import dataclass

@@ -1,15 +1,15 @@
 """Skill validation and SKILL.md handling."""
 
 import re
-from enum import Enum
 from pathlib import Path
 
+# Import ResourceType from core for backward compatibility
+# Deprecated: Import from agr.core instead
+from agr.core.resource import ResourceType
 
-class ResourceType(Enum):
-    """Resource types supported by agr."""
-
-    SKILL = "skill"
-    # Future: INSTRUCTION = "instruction"
+__all__ = ["ResourceType", "SKILL_MARKER", "is_valid_skill_dir", "find_skill_in_repo",
+           "discover_skills_in_repo", "update_skill_md_name", "validate_skill_name",
+           "create_skill_scaffold"]
 
 
 # Marker file for skills

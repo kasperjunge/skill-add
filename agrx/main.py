@@ -1,6 +1,5 @@
 """CLI entry point for agrx - temporary skill runner."""
 
-import atexit
 import shutil
 import signal
 import subprocess
@@ -13,10 +12,9 @@ from rich.console import Console
 
 from agr import __version__
 from agr.config import find_repo_root
+from agr.core import Orchestrator
 from agr.exceptions import AgrError, InvalidHandleError
-from agr.fetcher import downloaded_repo, install_skill_from_repo
 from agr.handle import parse_handle
-from agr.tool import DEFAULT_TOOL
 
 app = typer.Typer(
     name="agrx",
@@ -88,15 +86,15 @@ def main(
         agrx kasperjunge/commit -p "Review my changes"
     """
     # Find repo root (or use current dir for global)
-    if global_install:
-        skills_dir = DEFAULT_TOOL.get_global_skills_dir()
-    else:
-        repo_root = find_repo_root()
-        if repo_root is None:
-            console.print("[red]Error:[/red] Not in a git repository")
-            console.print("[dim]Use --global to install to ~/.claude/skills/[/dim]")
-            raise typer.Exit(1)
-        skills_dir = DEFAULT_TOOL.get_skills_dir(repo_root)
+    repo_root = find_repo_root()
+    if not global_install and repo_root is None:
+        console.print("[red]Error:[/red] Not in a git repository")
+        console.print("[dim]Use --global to install to ~/.claude/skills/[/dim]")
+        raise typer.Exit(1)
+
+    # Use current directory as fallback for global installs
+    if repo_root is None:
+        repo_root = Path.cwd()
 
     try:
         # Parse handle
@@ -110,38 +108,21 @@ def main(
         # Check Claude CLI is available
         _check_claude_cli()
 
-        # Get GitHub coordinates
-        username, repo_name = parsed.get_github_repo()
-
         console.print(f"[dim]Downloading {handle}...[/dim]")
 
-        # Create prefixed name for temporary skill
-        prefixed_name = f"{AGRX_PREFIX}{parsed.name}"
-        temp_skill_path = skills_dir / prefixed_name
+        # Use Orchestrator for installation
+        orchestrator = Orchestrator()
+        result = orchestrator.install(
+            parsed,
+            repo_root,
+            overwrite=True,
+            temporary=True,
+            temp_prefix=AGRX_PREFIX,
+            global_install=global_install,
+        )
 
-        # Download and install
-        with downloaded_repo(username, repo_name) as repo_dir:
-            # Create a modified handle for the prefixed installation
-            from agr.handle import ParsedHandle
-            temp_handle = ParsedHandle(
-                username=AGRX_PREFIX.rstrip("_"),
-                name=parsed.name,
-            )
-
-            install_skill_from_repo(
-                repo_dir,
-                parsed.name,
-                temp_handle,
-                skills_dir,
-                overwrite=True,
-            )
-
-        # The skill is installed as _agrx_:skillname, rename to just _agrx_skillname
-        installed_path = skills_dir / f"{AGRX_PREFIX.rstrip('_')}:{parsed.name}"
-        if installed_path.exists() and installed_path != temp_skill_path:
-            if temp_skill_path.exists():
-                shutil.rmtree(temp_skill_path)
-            installed_path.rename(temp_skill_path)
+        temp_skill_path = result.installed_path
+        prefixed_name = result.resource_name
 
         # Set up cleanup handlers
         cleanup_done = False
