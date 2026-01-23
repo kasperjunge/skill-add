@@ -3,16 +3,17 @@
 import pytest
 
 from agr.core.registry import (
-    _resource_specs,
-    _tool_specs,
+    clear_registry,
     detect_tool,
     get_all_resource_specs,
     get_all_tool_specs,
     get_default_tool,
+    get_registry_snapshot,
     get_resource_spec,
     get_tool_spec,
     register_resource_spec,
     register_tool_spec,
+    restore_registry_snapshot,
 )
 from agr.core.resource import ResourceSpec, ResourceType
 from agr.core.tool import ToolResourceConfig, ToolSpec
@@ -24,17 +25,16 @@ class TestResourceRegistry:
     @pytest.fixture(autouse=True)
     def clean_registry(self):
         """Clean registry before and after each test."""
-        # Store original state
-        original_resource_specs = _resource_specs.copy()
-        original_tool_specs = _tool_specs.copy()
+        # Store original state using public API
+        snapshot = get_registry_snapshot()
+
+        # Clear registry and suppress auto-registration for test isolation
+        clear_registry(suppress_auto_registration=True)
 
         yield
 
-        # Restore original state
-        _resource_specs.clear()
-        _resource_specs.update(original_resource_specs)
-        _tool_specs.clear()
-        _tool_specs.update(original_tool_specs)
+        # Restore original state using public API
+        restore_registry_snapshot(snapshot)
 
     @pytest.fixture
     def test_spec(self):
@@ -58,8 +58,8 @@ class TestResourceRegistry:
 
     def test_get_resource_spec_not_found(self):
         """Returns None for unregistered resource type."""
-        # Clear the registry for this test
-        _resource_specs.clear()
+        # Clear the registry for this test using public API
+        clear_registry()
         result = get_resource_spec(ResourceType.SKILL)
         assert result is None
 
@@ -79,15 +79,12 @@ class TestToolRegistry:
     @pytest.fixture(autouse=True)
     def clean_registry(self):
         """Clean registry before and after each test."""
-        original_resource_specs = _resource_specs.copy()
-        original_tool_specs = _tool_specs.copy()
+        snapshot = get_registry_snapshot()
+        clear_registry(suppress_auto_registration=True)
 
         yield
 
-        _resource_specs.clear()
-        _resource_specs.update(original_resource_specs)
-        _tool_specs.clear()
-        _tool_specs.update(original_tool_specs)
+        restore_registry_snapshot(snapshot)
 
     @pytest.fixture
     def test_tool_spec(self):
@@ -130,15 +127,12 @@ class TestDetectTool:
     @pytest.fixture(autouse=True)
     def clean_registry(self):
         """Clean registry before and after each test."""
-        original_resource_specs = _resource_specs.copy()
-        original_tool_specs = _tool_specs.copy()
+        snapshot = get_registry_snapshot()
+        clear_registry(suppress_auto_registration=True)
 
         yield
 
-        _resource_specs.clear()
-        _resource_specs.update(original_resource_specs)
-        _tool_specs.clear()
-        _tool_specs.update(original_tool_specs)
+        restore_registry_snapshot(snapshot)
 
     def test_detect_tool_with_marker(self, tmp_path):
         """Detects tool when marker exists."""
@@ -161,7 +155,7 @@ class TestDetectTool:
 
     def test_detect_tool_no_marker(self, tmp_path):
         """Returns None when no markers found."""
-        _tool_specs.clear()  # Ensure clean slate
+        clear_registry()  # Ensure clean slate using public API
         tool = ToolSpec(
             name="marker-tool",
             config_dir=".marker",
@@ -182,15 +176,12 @@ class TestGetDefaultTool:
     @pytest.fixture(autouse=True)
     def clean_registry(self):
         """Clean registry before and after each test."""
-        original_resource_specs = _resource_specs.copy()
-        original_tool_specs = _tool_specs.copy()
+        snapshot = get_registry_snapshot()
+        clear_registry(suppress_auto_registration=True)
 
         yield
 
-        _resource_specs.clear()
-        _resource_specs.update(original_resource_specs)
-        _tool_specs.clear()
-        _tool_specs.update(original_tool_specs)
+        restore_registry_snapshot(snapshot)
 
     def test_default_tool_prefers_claude(self):
         """Returns claude if registered."""
@@ -217,7 +208,7 @@ class TestGetDefaultTool:
 
     def test_default_tool_fallback(self):
         """Returns first tool if claude not registered."""
-        _tool_specs.clear()
+        clear_registry()
         other = ToolSpec(
             name="other",
             config_dir=".other",
@@ -233,5 +224,5 @@ class TestGetDefaultTool:
 
     def test_default_tool_none_when_empty(self):
         """Returns None when no tools registered."""
-        _tool_specs.clear()
+        clear_registry()
         assert get_default_tool() is None

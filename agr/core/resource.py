@@ -51,6 +51,14 @@ class ResourceSpec:
     def is_valid_resource(self, path: Path) -> bool:
         """Check if a path is a valid resource of this type.
 
+        For directory-based resources (is_directory=True):
+            - path must be a directory
+            - path must contain the marker file
+
+        For single-file resources (is_directory=False):
+            - path IS the resource file
+            - We just check that it exists and is a file
+
         Args:
             path: Path to check
 
@@ -62,8 +70,8 @@ class ResourceSpec:
                 return False
             return (path / self.marker_file).exists()
         else:
-            # Single file resource
-            return path.is_file() and path.name == self.marker_file
+            # Single file resource - the path IS the resource file
+            return path.is_file()
 
 
 @dataclass

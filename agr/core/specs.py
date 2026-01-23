@@ -4,10 +4,10 @@ This module defines the built-in specs for Phase 1:
 - SKILL_SPEC: Skill resource specification
 - CLAUDE_SPEC: Claude Code tool specification
 
-Import this module to register the built-in specs.
+Note: Auto-registration has been removed. Built-in specs are registered
+lazily via ensure_builtin_specs_registered() when first needed.
 """
 
-from agr.core.registry import register_resource_spec, register_tool_spec
 from agr.core.resource import ResourceSpec, ResourceType
 from agr.core.tool import ToolResourceConfig, ToolSpec
 
@@ -38,10 +38,12 @@ CLAUDE_SPEC = ToolSpec(
 
 
 def register_builtin_specs() -> None:
-    """Register all built-in resource and tool specifications."""
+    """Register all built-in resource and tool specifications.
+
+    This function is called lazily by ensure_builtin_specs_registered()
+    in the registry module. Direct import of this module no longer
+    causes automatic registration.
+    """
+    from agr.core.registry import register_resource_spec, register_tool_spec
     register_resource_spec(SKILL_SPEC)
     register_tool_spec(CLAUDE_SPEC)
-
-
-# Auto-register when module is imported
-register_builtin_specs()

@@ -1,11 +1,38 @@
-"""Skill validation and SKILL.md handling."""
+"""Skill validation and SKILL.md handling.
+
+DEPRECATED: ResourceType is re-exported here for backward compatibility.
+For new code, import from agr.core.resource instead.
+"""
 
 import re
+import warnings
 from pathlib import Path
 
-# Import ResourceType from core for backward compatibility
-# Deprecated: Import from agr.core instead
-from agr.core.resource import ResourceType
+# Lazy import to avoid circular imports
+_ResourceType = None
+
+
+def _get_resource_type():
+    """Lazily import ResourceType to avoid circular imports."""
+    global _ResourceType
+    if _ResourceType is None:
+        from agr.core.resource import ResourceType
+        _ResourceType = ResourceType
+    return _ResourceType
+
+
+def __getattr__(name: str):
+    """Emit deprecation warning when accessing ResourceType from this module."""
+    if name == "ResourceType":
+        warnings.warn(
+            "Importing ResourceType from agr.skill is deprecated. "
+            "Use 'from agr.core.resource import ResourceType' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _get_resource_type()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["ResourceType", "SKILL_MARKER", "is_valid_skill_dir", "find_skill_in_repo",
            "discover_skills_in_repo", "update_skill_md_name", "validate_skill_name",

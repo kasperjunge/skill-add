@@ -15,6 +15,36 @@ from agr.skill import SKILL_MARKER, find_skill_in_repo, is_valid_skill_dir, upda
 from agr.tool import DEFAULT_TOOL
 
 
+def copy_resource_to_dest(source: Path, dest: Path, name: str) -> Path:
+    """Copy a resource (skill) to a destination directory.
+
+    This is the shared helper for copying resources, used by both
+    the orchestrator (temporary installs) and fetcher functions.
+
+    Args:
+        source: Source resource directory
+        dest: Destination path (full path including resource name)
+        name: Name to set in the marker file (SKILL.md)
+
+    Returns:
+        The destination path
+    """
+    # Remove existing if present
+    if dest.exists():
+        shutil.rmtree(dest)
+
+    # Ensure parent exists
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy resource
+    shutil.copytree(source, dest)
+
+    # Update SKILL.md name field
+    update_skill_md_name(dest, name)
+
+    return dest
+
+
 @contextmanager
 def downloaded_repo(username: str, repo_name: str) -> Generator[Path, None, None]:
     """Download a GitHub repo tarball and yield the extracted directory.
@@ -110,20 +140,8 @@ def install_skill_from_repo(
             f"Skill already exists at {skill_dest}. Use --overwrite to replace."
         )
 
-    # Remove existing if overwriting
-    if skill_dest.exists():
-        shutil.rmtree(skill_dest)
-
-    # Ensure parent exists
-    skill_dest.parent.mkdir(parents=True, exist_ok=True)
-
-    # Copy skill
-    shutil.copytree(skill_source, skill_dest)
-
-    # Update SKILL.md name field
-    update_skill_md_name(skill_dest, installed_name)
-
-    return skill_dest
+    # Use shared helper to copy
+    return copy_resource_to_dest(skill_source, skill_dest, installed_name)
 
 
 def install_local_skill(
@@ -161,20 +179,8 @@ def install_local_skill(
             f"Skill already exists at {skill_dest}. Use --overwrite to replace."
         )
 
-    # Remove existing if overwriting
-    if skill_dest.exists():
-        shutil.rmtree(skill_dest)
-
-    # Ensure parent exists
-    skill_dest.parent.mkdir(parents=True, exist_ok=True)
-
-    # Copy skill
-    shutil.copytree(source_path, skill_dest)
-
-    # Update SKILL.md name field
-    update_skill_md_name(skill_dest, installed_name)
-
-    return skill_dest
+    # Use shared helper to copy
+    return copy_resource_to_dest(source_path, skill_dest, installed_name)
 
 
 def fetch_and_install(

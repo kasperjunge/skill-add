@@ -141,3 +141,81 @@ class TestResource:
             metadata={"key": "value"},
         )
         assert resource.metadata == {"key": "value"}
+
+
+class TestSingleFileResource:
+    """Tests for single-file (is_directory=False) resources."""
+
+    @pytest.fixture
+    def single_file_spec(self):
+        """Create a single-file resource spec for testing."""
+        return ResourceSpec(
+            type=ResourceType.SKILL,  # Using SKILL as placeholder
+            marker_file="RULE.md",
+            is_directory=False,
+            search_paths=("rules", "."),
+            required_frontmatter=(),
+            optional_frontmatter=("name",),
+            name_pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+        )
+
+    def test_is_valid_resource_single_file_exists(self, single_file_spec, tmp_path):
+        """Valid single file resource is recognized when file exists."""
+        rule_file = tmp_path / "my-rule.md"
+        rule_file.write_text("# My Rule")
+
+        assert single_file_spec.is_valid_resource(rule_file)
+
+    def test_is_valid_resource_single_file_not_exists(self, single_file_spec, tmp_path):
+        """Non-existent single file is not valid."""
+        rule_file = tmp_path / "nonexistent.md"
+
+        assert not single_file_spec.is_valid_resource(rule_file)
+
+    def test_is_valid_resource_single_file_is_directory(self, single_file_spec, tmp_path):
+        """Directory is not valid for single-file resource."""
+        directory = tmp_path / "my-dir"
+        directory.mkdir()
+
+        assert not single_file_spec.is_valid_resource(directory)
+
+    def test_marker_path_single_file(self, single_file_spec, tmp_path):
+        """marker_path for single-file resource returns the file itself."""
+        rule_file = tmp_path / "my-rule.md"
+        rule_file.write_text("# My Rule")
+
+        resource = Resource(
+            spec=single_file_spec,
+            name="my-rule",
+            path=rule_file,
+        )
+        # For single-file resources, marker_path IS the resource path
+        assert resource.marker_path == rule_file
+
+    def test_is_valid_single_file_resource(self, single_file_spec, tmp_path):
+        """Resource.is_valid() works for single-file resources."""
+        rule_file = tmp_path / "my-rule.md"
+        rule_file.write_text("# My Rule")
+
+        resource = Resource(
+            spec=single_file_spec,
+            name="my-rule",
+            path=rule_file,
+        )
+        assert resource.is_valid()
+
+    def test_is_valid_after_file_deleted(self, single_file_spec, tmp_path):
+        """Resource.is_valid() returns False after file deleted."""
+        rule_file = tmp_path / "my-rule.md"
+        rule_file.write_text("# My Rule")
+
+        resource = Resource(
+            spec=single_file_spec,
+            name="my-rule",
+            path=rule_file,
+        )
+        assert resource.is_valid()
+
+        # Delete the file
+        rule_file.unlink()
+        assert not resource.is_valid()
