@@ -136,8 +136,8 @@ def main(
                 overwrite=True,
             )
 
-        # The skill is installed as _agrx_:skillname, rename to just _agrx_skillname
-        installed_path = skills_dir / f"{AGRX_PREFIX.rstrip('_')}:{parsed.name}"
+        # The skill is installed using temp_handle.to_installed_name(), rename to just _agrx_skillname
+        installed_path = skills_dir / temp_handle.to_installed_name()
         if installed_path.exists() and installed_path != temp_skill_path:
             if temp_skill_path.exists():
                 shutil.rmtree(temp_skill_path)

@@ -10,7 +10,7 @@ from typing import Generator
 import httpx
 
 from agr.exceptions import AgrError, RepoNotFoundError, SkillNotFoundError
-from agr.handle import ParsedHandle
+from agr.handle import INSTALLED_NAME_SEPARATOR, ParsedHandle
 from agr.skill import SKILL_MARKER, find_skill_in_repo, is_valid_skill_dir, update_skill_md_name
 from agr.tool import DEFAULT_TOOL
 
@@ -145,6 +145,7 @@ def install_local_skill(
     Raises:
         SkillNotFoundError: If source is not a valid skill
         FileExistsError: If skill exists and not overwriting
+        AgrError: If skill name contains reserved separator
     """
     # Validate source
     if not is_valid_skill_dir(source_path):
@@ -152,8 +153,15 @@ def install_local_skill(
             f"'{source_path}' is not a valid skill (missing {SKILL_MARKER})"
         )
 
-    # Determine installed name
-    installed_name = f"local:{source_path.name}"
+    # Validate skill name doesn't contain reserved separator
+    if INSTALLED_NAME_SEPARATOR in source_path.name:
+        raise AgrError(
+            f"Skill name '{source_path.name}' contains reserved sequence '{INSTALLED_NAME_SEPARATOR}'"
+        )
+
+    # Determine installed name using ParsedHandle for consistency
+    handle = ParsedHandle(is_local=True, name=source_path.name, local_path=source_path)
+    installed_name = handle.to_installed_name()
     skill_dest = dest_dir / installed_name
 
     # Check if exists
@@ -222,7 +230,7 @@ def uninstall_skill(installed_name: str, repo_root: Path) -> bool:
     """Uninstall a skill by its installed name.
 
     Args:
-        installed_name: Installed directory name (e.g., "kasperjunge:commit")
+        installed_name: Installed directory name (e.g., "kasperjunge--commit")
         repo_root: Repository root path
 
     Returns:

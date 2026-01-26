@@ -1,8 +1,16 @@
 """Tests for agr.commands module (integration tests)."""
 
+import sys
+
 import pytest
 
 from agr.commands.init import init_config, init_skill
+
+# Windows doesn't allow colons in directory names
+skip_on_windows = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows doesn't allow colons in directory names"
+)
 from agr.commands.list import run_list
 from agr.config import AgrConfig, Dependency
 from agr.skill import SKILL_MARKER
@@ -113,7 +121,7 @@ class TestAddRemoveCommands:
         assert config.dependencies[0].path == "./my-skill"
 
         # Check installed
-        installed_dir = git_project / ".claude" / "skills" / "local:my-skill"
+        installed_dir = git_project / ".claude" / "skills" / "local--my-skill"
         assert installed_dir.exists()
 
     def test_remove_local_skill(self, git_project, skill_fixture):
@@ -135,7 +143,7 @@ class TestAddRemoveCommands:
         assert len(config.dependencies) == 0
 
         # Check uninstalled
-        installed_dir = git_project / ".claude" / "skills" / "local:my-skill"
+        installed_dir = git_project / ".claude" / "skills" / "local--my-skill"
         assert not installed_dir.exists()
 
     @pytest.mark.e2e
@@ -151,7 +159,7 @@ class TestAddRemoveCommands:
         assert config.dependencies[0].handle == "kasperjunge/migrate-to-skills"
 
         # Check installed
-        installed_dir = git_project / ".claude" / "skills" / "kasperjunge:migrate-to-skills"
+        installed_dir = git_project / ".claude" / "skills" / "kasperjunge--migrate-to-skills"
         assert installed_dir.exists()
 
 
@@ -183,3 +191,105 @@ class TestSyncCommand:
 
         captured = capsys.readouterr()
         assert "up to date" in captured.out.lower()
+
+    @skip_on_windows
+    def test_sync_migrates_colon_directories(self, git_project, capsys):
+        """Sync should rename colon-based directories to double-hyphen."""
+        from agr.commands.sync import run_sync
+
+        # Setup: create old-format skill directory
+        skills_dir = git_project / ".claude" / "skills"
+        old_skill = skills_dir / "user:skill"
+        old_skill.mkdir(parents=True)
+        (old_skill / "SKILL.md").write_text("---\nname: user:skill\n---\n# Test")
+
+        # Create a minimal config so sync doesn't exit early
+        (git_project / "agr.toml").write_text("dependencies = []")
+
+        # Run sync
+        run_sync()
+
+        # Check migration happened
+        assert not old_skill.exists(), "Old colon-based directory should be removed"
+        assert (skills_dir / "user--skill").exists(), "New double-hyphen directory should exist"
+
+        # Check output
+        captured = capsys.readouterr()
+        assert "Migrated" in captured.out
+
+    @skip_on_windows
+    def test_sync_migrates_multiple_colon_directories(self, git_project, capsys):
+        """Sync should migrate all colon-based directories."""
+        from agr.commands.sync import run_sync
+
+        # Setup: create multiple old-format skill directories
+        skills_dir = git_project / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        for name in ["user:skill1", "local:my-skill", "org:repo:skill"]:
+            skill_dir = skills_dir / name
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\n---\n# Test")
+
+        # Create minimal config
+        (git_project / "agr.toml").write_text("dependencies = []")
+
+        # Run sync
+        run_sync()
+
+        # Check all migrations happened
+        assert not (skills_dir / "user:skill1").exists()
+        assert (skills_dir / "user--skill1").exists()
+        assert not (skills_dir / "local:my-skill").exists()
+        assert (skills_dir / "local--my-skill").exists()
+        assert not (skills_dir / "org:repo:skill").exists()
+        assert (skills_dir / "org--repo--skill").exists()
+
+    @skip_on_windows
+    def test_sync_skips_migration_if_target_exists(self, git_project, capsys):
+        """Sync should skip migration when target directory already exists."""
+        from agr.commands.sync import run_sync
+
+        # Setup: create both old and new format directories
+        skills_dir = git_project / ".claude" / "skills"
+        old_skill = skills_dir / "user:skill"
+        new_skill = skills_dir / "user--skill"
+        old_skill.mkdir(parents=True)
+        new_skill.mkdir(parents=True)
+        (old_skill / "SKILL.md").write_text("---\nname: user:skill\n---\n# Old")
+        (new_skill / "SKILL.md").write_text("---\nname: user:skill\n---\n# New")
+
+        # Create minimal config
+        (git_project / "agr.toml").write_text("dependencies = []")
+
+        # Run sync
+        run_sync()
+
+        # Both should still exist (no migration due to conflict)
+        assert old_skill.exists(), "Old directory should still exist when target exists"
+        assert new_skill.exists(), "New directory should still exist"
+
+        # Check warning in output
+        captured = capsys.readouterr()
+        assert "Cannot migrate" in captured.out
+
+    @skip_on_windows
+    def test_sync_ignores_non_skill_colon_directories(self, git_project, capsys):
+        """Sync should not migrate directories without SKILL.md."""
+        from agr.commands.sync import run_sync
+
+        # Setup: create a colon-based directory without SKILL.md
+        skills_dir = git_project / ".claude" / "skills"
+        non_skill = skills_dir / "not:a:skill"
+        non_skill.mkdir(parents=True)
+        (non_skill / "README.md").write_text("# Not a skill")
+
+        # Create minimal config
+        (git_project / "agr.toml").write_text("dependencies = []")
+
+        # Run sync
+        run_sync()
+
+        # Directory should not be migrated
+        assert non_skill.exists(), "Non-skill directory should not be migrated"
+        assert not (skills_dir / "not--a--skill").exists()

@@ -4,15 +4,22 @@ Handle formats:
 - Remote: "username/skill" or "username/repo/skill"
 - Local: "./path/to/skill" or "path/to/skill"
 
-Installed naming:
-- Remote: "username:skill" or "username:repo:skill"
-- Local: "local:skillname"
+Installed naming (Windows-compatible using -- separator):
+- Remote: "username--skill" or "username--repo--skill"
+- Local: "local--skillname"
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
 from agr.exceptions import InvalidHandleError
+
+# Separator used in installed directory names (Windows-compatible)
+INSTALLED_NAME_SEPARATOR = "--"
+# Prefix for local skills in installed name
+LOCAL_PREFIX = "local"
+# Legacy separator (colon) for backward compatibility during migration
+LEGACY_SEPARATOR = ":"
 
 
 @dataclass
@@ -50,19 +57,22 @@ class ParsedHandle:
     def to_installed_name(self) -> str:
         """Convert to installed directory name.
 
+        Uses INSTALLED_NAME_SEPARATOR (--) for Windows compatibility.
+
         Examples:
-            Remote: "kasperjunge:commit" or "maragudk:skills:collaboration"
-            Local: "local:my-skill"
+            Remote: "kasperjunge--commit" or "maragudk--skills--collaboration"
+            Local: "local--my-skill"
         """
+        sep = INSTALLED_NAME_SEPARATOR
         if self.is_local:
-            return f"local:{self.name}"
+            return f"{LOCAL_PREFIX}{sep}{self.name}"
 
         if not self.username:
             return self.name
 
         if self.repo:
-            return f"{self.username}:{self.repo}:{self.name}"
-        return f"{self.username}:{self.name}"
+            return f"{self.username}{sep}{self.repo}{sep}{self.name}"
+        return f"{self.username}{sep}{self.name}"
 
     def get_github_repo(self) -> tuple[str, str]:
         """Get (username, repo_name) for GitHub download.
@@ -104,6 +114,7 @@ def parse_handle(ref: str) -> ParsedHandle:
     # Local path detection: starts with . or /
     if ref.startswith(("./", "../", "/")):
         path = Path(ref)
+        _validate_no_separator_in_name(ref, path.name)
         return ParsedHandle(
             is_local=True,
             name=path.name,
@@ -115,6 +126,7 @@ def parse_handle(ref: str) -> ParsedHandle:
         # Check if it's a path (has multiple segments or exists)
         test_path = Path(ref)
         if test_path.exists():
+            _validate_no_separator_in_name(ref, test_path.name)
             return ParsedHandle(
                 is_local=True,
                 name=test_path.name,
@@ -132,17 +144,21 @@ def parse_handle(ref: str) -> ParsedHandle:
 
     if len(parts) == 2:
         # user/name format
+        username, skill_name = parts[0], parts[1]
+        _validate_no_separator_in_components(ref, username=username, skill_name=skill_name)
         return ParsedHandle(
-            username=parts[0],
-            name=parts[1],
+            username=username,
+            name=skill_name,
         )
 
     if len(parts) == 3:
         # user/repo/name format
+        username, repo, skill_name = parts[0], parts[1], parts[2]
+        _validate_no_separator_in_components(ref, username=username, repo=repo, skill_name=skill_name)
         return ParsedHandle(
-            username=parts[0],
-            repo=parts[1],
-            name=parts[2],
+            username=username,
+            repo=repo,
+            name=skill_name,
         )
 
     raise InvalidHandleError(
@@ -150,23 +166,75 @@ def parse_handle(ref: str) -> ParsedHandle:
     )
 
 
+def _validate_no_separator_in_name(ref: str, name: str) -> None:
+    """Validate that a name doesn't contain the reserved separator sequence.
+
+    Args:
+        ref: Original handle string for error messages.
+        name: The name to validate.
+
+    Raises:
+        InvalidHandleError: If the name contains the separator.
+    """
+    if INSTALLED_NAME_SEPARATOR in name:
+        raise InvalidHandleError(
+            f"Invalid handle '{ref}': name '{name}' contains reserved sequence '{INSTALLED_NAME_SEPARATOR}'"
+        )
+
+
+def _validate_no_separator_in_components(
+    ref: str,
+    *,
+    username: str | None = None,
+    repo: str | None = None,
+    skill_name: str | None = None,
+) -> None:
+    """Validate that no component contains the reserved separator sequence.
+
+    Args:
+        ref: Original handle string for error messages.
+        username: GitHub username to validate.
+        repo: Repository name to validate.
+        skill_name: Skill name to validate.
+
+    Raises:
+        InvalidHandleError: If any component contains the separator.
+    """
+    sep = INSTALLED_NAME_SEPARATOR
+    for component, name in [("username", username), ("repo", repo), ("skill name", skill_name)]:
+        if name and sep in name:
+            raise InvalidHandleError(
+                f"Invalid handle '{ref}': {component} '{name}' contains reserved sequence '{sep}'"
+            )
+
+
 def installed_name_to_toml_handle(installed_name: str) -> str:
     """Convert installed directory name back to agr.toml handle.
 
+    Supports both new separator format and legacy colon format for backward compatibility.
+
     Args:
-        installed_name: Directory name like "kasperjunge:commit" or "local:my-skill"
+        installed_name: Directory name like "kasperjunge--commit" or "local--my-skill"
+                       (also accepts legacy "kasperjunge:commit" or "local:my-skill")
 
     Returns:
         Handle like "kasperjunge/commit" or the local path
     """
-    if ":" not in installed_name:
+    # Support legacy colon format during migration
+    if LEGACY_SEPARATOR in installed_name:
+        parts = installed_name.split(LEGACY_SEPARATOR)
+        if parts[0] == LOCAL_PREFIX:
+            return parts[1] if len(parts) > 1 else installed_name
+        return "/".join(parts)
+
+    # New separator format
+    if INSTALLED_NAME_SEPARATOR not in installed_name:
         return installed_name
 
-    parts = installed_name.split(":")
-
-    if parts[0] == "local":
+    parts = installed_name.split(INSTALLED_NAME_SEPARATOR)
+    if parts[0] == LOCAL_PREFIX:
         # Local skill - return just the name (path is lost)
         return parts[1] if len(parts) > 1 else installed_name
 
-    # Remote: convert colons to slashes
+    # Remote: convert separators to slashes
     return "/".join(parts)

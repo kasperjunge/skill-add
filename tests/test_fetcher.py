@@ -2,7 +2,7 @@
 
 import pytest
 
-from agr.exceptions import SkillNotFoundError
+from agr.exceptions import AgrError, SkillNotFoundError
 from agr.fetcher import (
     get_installed_skills,
     install_local_skill,
@@ -24,7 +24,7 @@ class TestInstallLocalSkill:
 
         assert installed_path.exists()
         assert (installed_path / SKILL_MARKER).exists()
-        assert installed_path.name == f"local:{skill_fixture.name}"
+        assert installed_path.name == f"local--{skill_fixture.name}"
 
     def test_install_invalid_skill_raises(self, tmp_path):
         """Installing directory without SKILL.md raises."""
@@ -59,6 +59,21 @@ class TestInstallLocalSkill:
 
         assert installed_path.exists()
 
+    def test_install_rejects_separator_in_name(self, tmp_path):
+        """Installing skill with reserved separator in name raises."""
+        from agr.skill import SKILL_MARKER
+
+        # Create a skill with -- in its name
+        bad_skill = tmp_path / "my--bad--skill"
+        bad_skill.mkdir()
+        (bad_skill / SKILL_MARKER).write_text("# Bad Skill")
+
+        dest_dir = tmp_path / ".claude" / "skills"
+        dest_dir.mkdir(parents=True)
+
+        with pytest.raises(AgrError, match="contains reserved sequence"):
+            install_local_skill(bad_skill, dest_dir)
+
 
 class TestUninstallSkill:
     """Tests for uninstall_skill function."""
@@ -88,7 +103,7 @@ class TestUninstallSkill:
         repo_root.mkdir()
         (repo_root / ".git").mkdir()
 
-        removed = uninstall_skill("nonexistent:skill", repo_root)
+        removed = uninstall_skill("nonexistent--skill", repo_root)
         assert not removed
 
 
@@ -116,7 +131,7 @@ class TestGetInstalledSkills:
 
         skills = get_installed_skills(repo_root)
         assert len(skills) == 1
-        assert skills[0] == f"local:{skill_fixture.name}"
+        assert skills[0] == f"local--{skill_fixture.name}"
 
 
 class TestIsSkillInstalled:
@@ -141,7 +156,7 @@ class TestIsSkillInstalled:
         repo_root.mkdir()
         (repo_root / ".git").mkdir()
 
-        assert not is_skill_installed("nonexistent:skill", repo_root)
+        assert not is_skill_installed("nonexistent--skill", repo_root)
 
 
 class TestDownloadedRepo:

@@ -7,21 +7,66 @@ from rich.console import Console
 from agr.config import AgrConfig, find_config, find_repo_root
 from agr.exceptions import AgrError
 from agr.fetcher import fetch_and_install, is_skill_installed
-from agr.handle import parse_handle
+from agr.handle import INSTALLED_NAME_SEPARATOR, LEGACY_SEPARATOR, parse_handle
+from agr.tool import DEFAULT_TOOL
 
 console = Console()
+
+
+def _migrate_legacy_directories(skills_dir: Path) -> None:
+    """Migrate colon-based directory names to the new separator format.
+
+    This ensures backward compatibility with skills installed before
+    the Windows-compatible naming scheme was introduced.
+
+    Args:
+        skills_dir: The skills directory to scan for legacy directories.
+    """
+    if not skills_dir.exists():
+        return
+
+    for skill_dir in skills_dir.iterdir():
+        if not skill_dir.is_dir():
+            continue
+        if LEGACY_SEPARATOR not in skill_dir.name:
+            continue
+        # Verify it's a skill (has SKILL.md)
+        if not (skill_dir / "SKILL.md").exists():
+            continue
+
+        # Convert legacy separator to new separator
+        new_name = skill_dir.name.replace(LEGACY_SEPARATOR, INSTALLED_NAME_SEPARATOR)
+        new_path = skills_dir / new_name
+
+        if new_path.exists():
+            console.print(f"[yellow]Cannot migrate:[/yellow] {skill_dir.name}")
+            console.print(f"  [dim]Target {new_name} already exists[/dim]")
+            continue
+
+        try:
+            skill_dir.rename(new_path)
+            console.print(f"[blue]Migrated:[/blue] {skill_dir.name} -> {new_name}")
+        except OSError as e:
+            console.print(f"[red]Failed to migrate:[/red] {skill_dir.name}")
+            console.print(f"  [dim]{e}[/dim]")
 
 
 def run_sync() -> None:
     """Run the sync command.
 
     Installs all dependencies from agr.toml that aren't already installed.
+    Also migrates any legacy colon-based directory names to the new
+    Windows-compatible double-hyphen format.
     """
     # Find repo root
     repo_root = find_repo_root()
     if repo_root is None:
         console.print("[red]Error:[/red] Not in a git repository")
         raise SystemExit(1)
+
+    # Migrate legacy colon-based directories to new separator format
+    skills_dir = DEFAULT_TOOL.get_skills_dir(repo_root)
+    _migrate_legacy_directories(skills_dir)
 
     # Find config
     config_path = find_config()
