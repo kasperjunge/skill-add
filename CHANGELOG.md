@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-27
+
 ### Added
 - `@pytest.mark.requires_cli(name)` marker to skip tests when required CLI tools aren't installed
 - **Multi-tool support**: Skills can now be installed to multiple AI coding tools simultaneously
