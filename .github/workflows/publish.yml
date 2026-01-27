@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -47,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -105,9 +109,9 @@ jobs:
 
       - name: Validate tag format
         run: |
-          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([ab][0-9]+)?$ ]]; then
             echo "Error: Invalid tag format '$TAG_NAME'"
-            echo "Expected format: vX.Y.Z (e.g., v0.6.5)"
+            echo "Expected format: vX.Y.Z or vX.Y.Za1/vX.Y.Zb1 (e.g., v0.6.5, v0.7.1b1)"
             exit 1
           fi
 
