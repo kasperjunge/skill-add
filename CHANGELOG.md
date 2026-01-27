@@ -8,6 +8,11 @@
 - Private repository support via GITHUB_TOKEN/GH_TOKEN environment variables
 - `AuthenticationError` exception for authentication failures (401/403 responses)
 - Comprehensive test coverage for GitHub authentication and error handling
+- CLI integration tests for Cursor tool support (`test_cursor.py`)
+- CLI integration tests for GitHub Copilot tool support (`test_copilot.py`)
+- CLI integration tests for private repo authentication (`test_private_repo.py`)
+- Tests for multi-tool scenarios (Claude + Cursor, Claude + Copilot)
+- Token security tests ensuring credentials are not leaked in error messages
 
 ## [0.7.0] - 2026-01-27
 
