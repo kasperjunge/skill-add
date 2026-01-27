@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-01-27
+
+### Fixed
+- Fix CI/CD publish workflow to use virtualenv instead of system Python
+
 ## [0.6.3] - 2026-01-27
 
 ### Fixed

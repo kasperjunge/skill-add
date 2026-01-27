@@ -59,8 +59,9 @@ jobs:
 
       - name: Verify package
         run: |
-          uv pip install dist/*.whl --system
-          python -c "import agr; print(f'Built version: {agr.__version__}')"
+          uv venv .venv
+          uv pip install dist/*.whl
+          .venv/bin/python -c "import agr; print(f'Built version: {agr.__version__}')"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
