@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- GitHub Copilot support with flat directory structure (`.github/skills/` for project, `~/.copilot/skills/` for global)
+- `global_config_dir` field in `ToolConfig` for tools where personal path differs from project path
+
 ## [0.7.0] - 2026-01-27
 
 ### Added
