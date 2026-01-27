@@ -10,8 +10,6 @@ from typing import Generator
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from agr.exceptions import AgrError, RepoNotFoundError, SkillNotFoundError
 from agr.handle import INSTALLED_NAME_SEPARATOR, ParsedHandle
 from agr.skill import (
@@ -21,6 +19,8 @@ from agr.skill import (
     update_skill_md_name,
 )
 from agr.tool import DEFAULT_TOOL, ToolConfig
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager

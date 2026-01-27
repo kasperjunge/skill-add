@@ -32,6 +32,7 @@
 - Updated /make-release skill to match new automated workflow (6 steps instead of 8)
 
 ### Fixed
+- Fix import order in `fetcher.py` to resolve E402 linting errors
 - Use `SKILL_MARKER` constant instead of hardcoded `"SKILL.md"` string in sync command
 - Shell injection risk in workflow by using environment variables instead of direct interpolation
 - Hardcoded repository URL in release notes now uses GitHub context variables
