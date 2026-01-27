@@ -1,10 +1,19 @@
 """Tests for agr.fetcher module."""
 
 import pytest
+import respx
+from httpx import Response
 
-from agr.exceptions import AgrError, SkillNotFoundError
+from agr.exceptions import (
+    AgrError,
+    AuthenticationError,
+    RepoNotFoundError,
+    SkillNotFoundError,
+)
 from agr.fetcher import (
     _cleanup_empty_parents,
+    _get_github_token,
+    downloaded_repo,
     fetch_and_install_to_tools,
     get_installed_skills,
     install_local_skill,
@@ -14,6 +23,247 @@ from agr.fetcher import (
 from agr.handle import ParsedHandle
 from agr.skill import SKILL_MARKER
 from agr.tool import CLAUDE, CURSOR
+
+
+class TestGitHubAuthentication:
+    """Tests for GitHub token authentication."""
+
+    def test_get_github_token_returns_value(self, monkeypatch):
+        """Token is returned when GITHUB_TOKEN is set."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_test123")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        assert _get_github_token() == "ghp_test123"
+
+    def test_get_github_token_returns_none_when_unset(self, monkeypatch):
+        """None returned when no token env vars are set."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        assert _get_github_token() is None
+
+    def test_get_github_token_empty_string_is_none(self, monkeypatch):
+        """Empty string treated as unset."""
+        monkeypatch.setenv("GITHUB_TOKEN", "")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        assert _get_github_token() is None
+
+    def test_get_github_token_whitespace_is_none(self, monkeypatch):
+        """Whitespace-only treated as unset."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        assert _get_github_token() is None
+
+    def test_get_github_token_prefers_github_token(self, monkeypatch):
+        """GITHUB_TOKEN takes precedence over GH_TOKEN."""
+        monkeypatch.setenv("GITHUB_TOKEN", "primary")
+        monkeypatch.setenv("GH_TOKEN", "fallback")
+        assert _get_github_token() == "primary"
+
+    def test_get_github_token_falls_back_to_gh_token(self, monkeypatch):
+        """GH_TOKEN used when GITHUB_TOKEN is not set."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setenv("GH_TOKEN", "fallback")
+        assert _get_github_token() == "fallback"
+
+    @respx.mock
+    def test_token_sent_in_authorization_header(self, monkeypatch):
+        """Token is included in Authorization header when set."""
+        monkeypatch.setenv("GITHUB_TOKEN", "test_token")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        route = respx.get(
+            "https://github.com/user/repo/archive/refs/heads/main.tar.gz"
+        ).mock(return_value=Response(404))
+
+        with pytest.raises(RepoNotFoundError):
+            with downloaded_repo("user", "repo"):
+                pass
+
+        assert route.called
+        assert route.calls[0].request.headers["Authorization"] == "token test_token"
+
+    @respx.mock
+    def test_no_auth_header_when_token_unset(self, monkeypatch):
+        """No Authorization header when token is not set."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        route = respx.get(
+            "https://github.com/user/repo/archive/refs/heads/main.tar.gz"
+        ).mock(return_value=Response(404))
+
+        with pytest.raises(RepoNotFoundError):
+            with downloaded_repo("user", "repo"):
+                pass
+
+        assert route.called
+        assert "Authorization" not in route.calls[0].request.headers
+
+    @respx.mock
+    def test_401_without_token_suggests_setting_token(self, monkeypatch):
+        """401 without token suggests setting GITHUB_TOKEN."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(401)
+        )
+
+        with pytest.raises(AuthenticationError, match="Set GITHUB_TOKEN"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_401_with_token_suggests_checking_token(self, monkeypatch):
+        """401 with token suggests checking validity."""
+        monkeypatch.setenv("GITHUB_TOKEN", "bad_token")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(401)
+        )
+
+        with pytest.raises(AuthenticationError, match="is valid"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_403_with_token_raises_scope_error(self, monkeypatch):
+        """403 with token suggests checking scope."""
+        monkeypatch.setenv("GITHUB_TOKEN", "token_without_scope")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(403)
+        )
+
+        with pytest.raises(AuthenticationError, match="repo.*scope"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_403_without_token_suggests_setting_token(self, monkeypatch):
+        """403 without token suggests setting GITHUB_TOKEN."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(403)
+        )
+
+        with pytest.raises(AuthenticationError, match="Set GITHUB_TOKEN"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_429_raises_rate_limit_error(self, monkeypatch):
+        """429 response raises AgrError with rate limit message."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(429)
+        )
+
+        with pytest.raises(AgrError, match="rate limit"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_error_message_does_not_contain_token(self, monkeypatch):
+        """Error messages must not contain the token value."""
+        secret_token = "ghp_SUPERSECRET123456"
+        monkeypatch.setenv("GITHUB_TOKEN", secret_token)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(500)
+        )
+
+        with pytest.raises(AgrError) as exc_info:
+            with downloaded_repo("user", "repo"):
+                pass
+
+        assert secret_token not in str(exc_info.value)
+        # Verify exception chaining is suppressed (security)
+        assert exc_info.value.__cause__ is None
+
+    def test_get_github_token_strips_whitespace(self, monkeypatch):
+        """Token with surrounding whitespace is stripped."""
+        monkeypatch.setenv("GITHUB_TOKEN", "  ghp_test123  ")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        assert _get_github_token() == "ghp_test123"
+
+    def test_get_github_token_github_whitespace_falls_back_to_gh(self, monkeypatch):
+        """Whitespace GITHUB_TOKEN falls back to valid GH_TOKEN."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.setenv("GH_TOKEN", "fallback_token")
+        assert _get_github_token() == "fallback_token"
+
+    def test_get_github_token_both_whitespace_returns_none(self, monkeypatch):
+        """Both tokens whitespace-only returns None."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.setenv("GH_TOKEN", "   ")
+        assert _get_github_token() is None
+
+    @respx.mock
+    def test_connect_error_raises_agr_error(self, monkeypatch):
+        """Connection errors wrapped in AgrError."""
+        import httpx
+
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+
+        with pytest.raises(AgrError, match="Network error: ConnectError"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_timeout_error_raises_agr_error(self, monkeypatch):
+        """Timeout errors wrapped in AgrError."""
+        import httpx
+
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            side_effect=httpx.ReadTimeout("Read timed out")
+        )
+
+        with pytest.raises(AgrError, match="Network error: ReadTimeout"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_500_raises_agr_error_with_status_code(self, monkeypatch):
+        """500 response raises AgrError with status code in message."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(500)
+        )
+
+        with pytest.raises(AgrError, match="HTTP 500"):
+            with downloaded_repo("user", "repo"):
+                pass
+
+    @respx.mock
+    def test_502_raises_agr_error_with_status_code(self, monkeypatch):
+        """502 response raises AgrError with status code in message."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.tar.gz").mock(
+            return_value=Response(502)
+        )
+
+        with pytest.raises(AgrError, match="HTTP 502"):
+            with downloaded_repo("user", "repo"):
+                pass
 
 
 class TestInstallLocalSkill:

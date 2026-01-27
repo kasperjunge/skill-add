@@ -9,6 +9,10 @@ class RepoNotFoundError(AgrError):
     """Raised when the GitHub repo doesn't exist."""
 
 
+class AuthenticationError(AgrError):
+    """Raised when GitHub authentication fails (401/403)."""
+
+
 class SkillNotFoundError(AgrError):
     """Raised when the skill doesn't exist in the repo."""
 

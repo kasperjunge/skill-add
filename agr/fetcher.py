@@ -1,6 +1,7 @@
 """GitHub download and skill installation."""
 
 import logging
+import os
 import shutil
 import tarfile
 import tempfile
@@ -10,7 +11,12 @@ from typing import Generator
 
 import httpx
 
-from agr.exceptions import AgrError, RepoNotFoundError, SkillNotFoundError
+from agr.exceptions import (
+    AgrError,
+    AuthenticationError,
+    RepoNotFoundError,
+    SkillNotFoundError,
+)
 from agr.handle import INSTALLED_NAME_SEPARATOR, ParsedHandle
 from agr.skill import (
     SKILL_MARKER,
@@ -21,6 +27,21 @@ from agr.skill import (
 from agr.tool import DEFAULT_TOOL, ToolConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _get_github_token() -> str | None:
+    """Get GitHub token from environment.
+
+    Checks GITHUB_TOKEN first, then falls back to GH_TOKEN (used by gh CLI).
+
+    Returns:
+        Token string if set and non-empty, None otherwise.
+    """
+    for env_var in ("GITHUB_TOKEN", "GH_TOKEN"):
+        token = os.environ.get(env_var, "")
+        if token.strip():
+            return token.strip()
+    return None
 
 
 @contextmanager
@@ -36,6 +57,7 @@ def downloaded_repo(username: str, repo_name: str) -> Generator[Path, None, None
 
     Raises:
         RepoNotFoundError: If the repository doesn't exist
+        AuthenticationError: If authentication fails (private repo without valid token)
         AgrError: If download or extraction fails
     """
     tarball_url = (
@@ -48,18 +70,52 @@ def downloaded_repo(username: str, repo_name: str) -> Generator[Path, None, None
 
         # Download tarball
         try:
+            # Build headers with optional auth
+            headers = {}
+            token = _get_github_token()
+            if token:
+                headers["Authorization"] = f"token {token}"
+
             with httpx.Client(follow_redirects=True, timeout=30.0) as client:
-                response = client.get(tarball_url)
+                response = client.get(tarball_url, headers=headers)
+                if response.status_code == 401:
+                    if token:
+                        raise AuthenticationError(
+                            "Authentication failed. Check that GITHUB_TOKEN is valid."
+                        )
+                    else:
+                        raise AuthenticationError(
+                            "Authentication required. Set GITHUB_TOKEN to access this repository."
+                        )
+                if response.status_code == 403:
+                    if token:
+                        raise AuthenticationError(
+                            "Access denied. Check that GITHUB_TOKEN has 'repo' scope "
+                            "for private repositories."
+                        )
+                    else:
+                        raise AuthenticationError(
+                            "Access denied. Set GITHUB_TOKEN to access private repositories."
+                        )
                 if response.status_code == 404:
                     raise RepoNotFoundError(
                         f"Repository '{username}/{repo_name}' not found on GitHub"
                     )
+                if response.status_code == 429:
+                    raise AgrError(
+                        "GitHub rate limit exceeded. Set GITHUB_TOKEN for higher limits "
+                        "or wait before retrying."
+                    )
                 response.raise_for_status()
                 tarball_path.write_bytes(response.content)
-        except httpx.HTTPStatusError as e:
-            raise AgrError(f"Failed to download repository: {e}")
+        except httpx.HTTPStatusError:
+            # Don't include the original exception - it may contain auth headers
+            raise AgrError(
+                f"Failed to download repository '{username}/{repo_name}': "
+                f"HTTP {response.status_code}"
+            ) from None
         except httpx.RequestError as e:
-            raise AgrError(f"Network error: {e}")
+            raise AgrError(f"Network error: {type(e).__name__}") from None
 
         # Extract tarball
         extract_path = tmp_path / "extracted"
