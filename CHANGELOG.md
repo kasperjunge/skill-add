@@ -4,6 +4,12 @@
 
 ### Added
 - **Multi-tool support**: Skills can now be installed to multiple AI coding tools simultaneously
+- CLI testing infrastructure with fluent assertion API (`assert_cli(result).succeeded().stdout_contains("...")`)
+- Test coverage for `agr add`, `remove`, `init`, `sync`, `list`, `--version`, `--help`
+- Test coverage for `agrx` command with network marker for external dependency tests
+- Edge case tests: adding already-installed skill, removing non-installed skill, init with existing directory
+- Negative assertion helpers: `stdout_not_contains()`, `stderr_not_contains()`
+- `@pytest.mark.network` marker for tests requiring network access (skip with `-m "not network"`)
 - Cursor tool configuration with nested directory structure (e.g., `.cursor/skills/username/skill/`)
 - `tools` configuration in `agr.toml` to specify target tools: `tools = ["claude", "cursor"]`
 - `fetch_and_install_to_tools()` function for atomic multi-tool installation with rollback
