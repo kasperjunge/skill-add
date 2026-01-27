@@ -278,7 +278,9 @@ def fetch_and_install_to_tools(
             try:
                 shutil.rmtree(rollback_path)
             except OSError as e:
-                logger.warning(f"Failed to rollback {tool_name} at {rollback_path}: {e}")
+                logger.warning(
+                    f"Failed to rollback {tool_name} at {rollback_path}: {e}"
+                )
 
     if handle.is_local:
         # Local: no download needed, just iterate with rollback
@@ -367,9 +369,7 @@ def _cleanup_empty_parents(path: Path, stop_at: Path) -> None:
             break
 
 
-def get_installed_skills(
-    repo_root: Path, tool: ToolConfig = DEFAULT_TOOL
-) -> list[str]:
+def get_installed_skills(repo_root: Path, tool: ToolConfig = DEFAULT_TOOL) -> list[str]:
     """Get list of installed skill names.
 
     Args:

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `@pytest.mark.requires_cli(name)` marker to skip tests when required CLI tools aren't installed
 - **Multi-tool support**: Skills can now be installed to multiple AI coding tools simultaneously
 - CLI testing infrastructure with fluent assertion API (`assert_cli(result).succeeded().stdout_contains("...")`)
 - Test coverage for `agr add`, `remove`, `init`, `sync`, `list`, `--version`, `--help`
@@ -17,6 +18,7 @@
 - Type hints to `_get_installation_status` in list command
 
 ### Changed
+- Reorganized `.gitignore` to group tool directories (`.claude/`, `.cursor/`) at top
 - `ParsedHandle` now generates tool-appropriate paths (flat for Claude, nested for Cursor)
 - Commands (`add`, `remove`, `list`, `sync`) now operate on all configured tools
 - Rollback failures in `fetch_and_install_to_tools` now log warnings instead of being silently ignored

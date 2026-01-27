@@ -14,3 +14,5 @@ dependencies = [
     {path = "./skills/make-commit", type = "skill"},
     {path = "./skills/make-release", type = "skill"},
 ]
+
+tools =["claude", "cursor"]

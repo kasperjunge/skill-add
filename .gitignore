@@ -1,3 +1,6 @@
+.claude/
+.cursor/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -62,5 +65,4 @@ docs/.cache/
 
 # Release messages output
 .releases/
-.claude/
 skill-repos/

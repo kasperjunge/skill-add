@@ -36,4 +36,5 @@ markers = [
     "e2e: end-to-end tests requiring network (skip with '-m \"not e2e\"')",
     "network: tests that make real network requests",
     "slow: tests taking > 5 seconds",
+    "requires_cli(name): skip test if CLI tool is not installed",
 ]
