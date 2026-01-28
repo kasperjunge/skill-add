@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.1b2] - 2026-01-28
+
+### Added
+- `agr tools` command group for managing configured tools (`list`, `add`, `remove`)
+- Multi-tool support in `agrx` with `--tool` flag to specify which CLI to use
+- CLI configuration fields in `ToolConfig` (`cli_command`, `cli_prompt_flag`, `cli_force_flag`, etc.)
+
 ### Fixed
 - Config now saved after sync completes in `agr tools add`, preventing data inconsistency if sync fails
 - Tool not removed from config if skill deletion fails in `agr tools remove`, preventing orphaned files

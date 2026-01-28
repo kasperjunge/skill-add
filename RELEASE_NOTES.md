@@ -1,20 +1,19 @@
-## agr v0.7.1b1
+## agr v0.7.1b2
 
-Beta release adding GitHub Copilot support and private repository authentication.
+Manage which AI coding tools your skills sync to with the new `agr tools` command.
 
 ### Highlights
 
-- **GitHub Copilot Support**: Skills can now be installed to GitHub Copilot (`.github/skills/` for project, `~/.copilot/skills/` for global)
-- **Private Repositories**: Install skills from private repos using GITHUB_TOKEN/GH_TOKEN environment variables
+- **Tool Management CLI**: New `agr tools list/add/remove` commands to configure which tools (Claude, Cursor, Copilot) receive your skills
+- **Multi-tool agrx**: Run temporary skills with any supported CLI using `agrx skill --tool cursor`
 
 ### What's Changed
 
-- GitHub Copilot tool configuration with flat directory structure
-- `global_config_dir` field in `ToolConfig` for tools with different personal/project paths
-- Private repository support via GitHub token authentication
-- `AuthenticationError` exception for 401/403 responses
-- Comprehensive CLI integration tests for Cursor, Copilot, and private repos
-- Tests for multi-tool scenarios and token security
+- Added `agr tools` command group for managing configured tools
+- Added `--tool` flag to `agrx` for specifying which CLI to use
+- Fixed config being saved before sync completes in `agr tools add`
+- Fixed tool remaining in config when skill deletion fails in `agr tools remove`
+- Code cleanup: replaced hardcoded values with constants, added type annotations
 
 ---
 
